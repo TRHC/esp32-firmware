@@ -1,9 +1,9 @@
-menu "esp32-i2c-lcd1602-example Configuration"
+menu "TRHC Firmware configuration"
 
 config I2C_MASTER_SCL
     int "I2C Master SCL GPIO number"
 	range 0 34
-	default 19
+	default 25
 	help
 		GPIO number (IOxx) for I2C SCL.
 
@@ -14,7 +14,7 @@ config I2C_MASTER_SCL
 config I2C_MASTER_SDA
     int "I2C Master SDA GPIO number"
     range 0 34
-    default 18
+    default 26
     help
         GPIO number (IOxx) for I2C SDA.
 
@@ -22,10 +22,26 @@ config I2C_MASTER_SDA
 
         GPIOs 35-39 are input-only so cannot be used to drive the One Wire Bus.
 
-config LCD1602_I2C_ADDRESS
-    hex "I2C Address for LCD1602 device"
+config CCS811_I2C_ADDRESS
+    hex "I2C Address for CCS811"
+    default 0x5B
+    help
+        I2C address for CCS811 Gas quality sensor/
+
+config LCD_I2C_ADDRESS
+    hex "I2C Address for LCD screen"
     default 0x27
     help
         I2C address for HD44780-compatible LCD1602 device.
+
+config LCD_COLUMNS
+    int "LCD Display number of columns"
+    range 1 20
+    default 20
+
+config LCD_ROWS
+    int "LCD Display number of rows"
+    range 1 20
+    default 4
 
 endmenu

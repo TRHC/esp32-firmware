@@ -11,9 +11,13 @@
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include "rom/uart.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 
 #include "smbus.h"
 #include "i2c-lcd1602.h"
+#include "si7021.h"
+#include "ccs811.h"
 
 #define TAG "app"
 
@@ -23,6 +27,33 @@
 #define I2C_MASTER_FREQ_HZ       100000
 #define I2C_MASTER_SDA_IO        CONFIG_I2C_MASTER_SDA
 #define I2C_MASTER_SCL_IO        CONFIG_I2C_MASTER_SCL
+
+static i2c_lcd1602_info_t * lcd2004;
+static ccs811_sensor_t* ccs811;
+
+uint8_t temp[8] = {
+    0b00100,
+    0b01010,
+    0b01010,
+    0b01110,
+    0b01110,
+    0b11111,
+    0b11111,
+    0b01110
+};
+
+uint8_t drop[8] =
+{
+    0b00100,
+    0b00100,
+    0b01010,
+    0b01010,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b01110,
+};
+
 
 static void i2c_master_init(void)
 {
@@ -40,36 +71,99 @@ static void i2c_master_init(void)
                        I2C_MASTER_TX_BUF_LEN, 0);
 }
 
-static i2c_lcd1602_info_t * t_i2c_lcd_init() {
-    i2c_port_t i2c_num = I2C_MASTER_NUM;
-    uint8_t address = CONFIG_LCD1602_I2C_ADDRESS;
+void display_measure_task(void * pvParameter) {
+    char buf[20];
+    float tc, rh;
+    uint16_t tvoc, eco2, base;
 
-    // Set up the SMBus
-    smbus_info_t * smbus_info = smbus_malloc();
-    smbus_init(smbus_info, i2c_num, address);
-    smbus_set_timeout(smbus_info, 1000 / portTICK_RATE_MS);
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    i2c_lcd1602_clear(lcd2004);
+    i2c_lcd1602_move_cursor(lcd2004, 12, 3);
+    i2c_lcd1602_write_string(lcd2004, "g.betsan");
 
-    // Set up the LCD1602 device with backlight off and turn it on
-    i2c_lcd1602_info_t * lcd_info = i2c_lcd1602_malloc();
-    i2c_lcd1602_init(lcd_info, smbus_info, true, 4, 20, 20);
-    i2c_lcd1602_set_backlight(lcd_info, true);
+    while(true) {
+        tc = si7021_read_temperature();
+        rh = si7021_read_humidity();
+        ccs811_set_environmental_data(ccs811, tc, rh);
 
-    return lcd_info;
+        i2c_lcd1602_move_cursor(lcd2004, 0, 3);
+        sprintf(buf, "%.1f%%", uxTaskGetStackHighWaterMark( NULL ) / 40.96);
+        i2c_lcd1602_write_string(lcd2004, buf);
+
+        sprintf(buf, "%.2f", rh);
+        i2c_lcd1602_move_cursor(lcd2004, 0, 0);
+        i2c_lcd1602_write_string(lcd2004, buf);
+        i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_1);
+
+        sprintf(buf, "%.2f", tc);
+        i2c_lcd1602_move_cursor(lcd2004, 0, 1);
+        i2c_lcd1602_write_string(lcd2004, buf);
+        i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_0);
+
+        if (ccs811_get_results(ccs811, &tvoc, &eco2, 0, 0)) {
+            sprintf(buf, "TVOC: %d", tvoc);
+            i2c_lcd1602_move_cursor(lcd2004, 8, 0);
+            i2c_lcd1602_write_string(lcd2004, buf);
+
+            sprintf(buf, "eCO2: %d", eco2);
+            i2c_lcd1602_move_cursor(lcd2004, 8, 1);
+            i2c_lcd1602_write_string(lcd2004, buf);
+
+            base = ccs811_get_baseline(ccs811);
+            sprintf(buf, "Base: %d", base);
+            i2c_lcd1602_move_cursor(lcd2004, 8, 2);
+            i2c_lcd1602_write_string(lcd2004, buf);
+        } else  {
+            ESP_LOGE("ccs811", "Unable to retrieve sensor data");
+        } 
+
+
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
 }
 
-void lcd1602_task(void * pvParameter)
-{
-    ESP_LOGI(TAG, "Stack size [%i]", uxTaskGetStackHighWaterMark( NULL ));
-    vTaskDelete(NULL);
+void i2c_display_init() {
+    // Set up the SMBus
+    smbus_info_t * smbus_info = smbus_malloc();
+    smbus_init(smbus_info, I2C_MASTER_NUM, CONFIG_LCD_I2C_ADDRESS);
+    smbus_set_timeout(smbus_info, 1000 / portTICK_RATE_MS);
+
+    // Set up the LCD device with backlight off and turn it on
+    lcd2004 = i2c_lcd1602_malloc();
+    i2c_lcd1602_init(lcd2004, smbus_info, true, CONFIG_LCD_ROWS, 40, CONFIG_LCD_COLUMNS);
+
+    if(lcd2004) {
+        ESP_LOGI("lcd", "Successful init. on 0x%X", CONFIG_LCD_I2C_ADDRESS);
+        i2c_lcd1602_set_backlight(lcd2004, true);
+        i2c_lcd1602_move_cursor(lcd2004, 0, 1);
+        i2c_lcd1602_write_string(lcd2004, "TRHC-Firmware ESP32;");
+        i2c_lcd1602_move_cursor(lcd2004, 14, 3);
+        i2c_lcd1602_write_string(lcd2004, "v0.0.1");
+        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_0, temp);
+        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_1, drop);
+    } else {
+        ESP_LOGE("lcd", "Unable to init LCD");
+    }
+}
+
+void i2c_ccs811_init() {
+    ccs811 = ccs811_init_sensor(0, CCS811_I2C_ADDRESS_2);
+    if(ccs811) {
+        ESP_LOGI("ccs811", "Successful init. on 0x%X", CONFIG_CCS811_I2C_ADDRESS);
+    } else {
+        ESP_LOGE("ccs811", "Unable to init CCS811");
+    }
 }
 
 void app_main()
 {
-    ESP_LOGW(TAG, "TRHC-Monitor firware start");
+    ESP_LOGW(TAG, "TRHC-Monitor firmware start");
     i2c_master_init();
-    i2c_lcd1602_info_t * lcd2004 = t_i2c_lcd_init();
-    i2c_lcd1602_home(lcd2004);
-    i2c_lcd1602_write_string(lcd2004, "TRHC-Firmware ESP32;v0.0.0 (debug)");
-    // xTaskCreate(&lcd1602_task, "lcd1602_task", 4096, NULL, 5, NULL);
+
+    // Initialize I2C Slaves
+    i2c_display_init();
+    i2c_ccs811_init();
+    
+    xTaskCreate(&display_measure_task, "display_measure_task", 2048, NULL, 5, NULL);
 }
 
