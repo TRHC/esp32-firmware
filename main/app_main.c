@@ -31,6 +31,9 @@
 static i2c_lcd1602_info_t * lcd2004;
 static ccs811_sensor_t* ccs811;
 
+nvs_handle my_handle;
+uint32_t nvs_base = 93000;
+
 uint8_t temp[8] = {
     0b00100,
     0b01010,
@@ -74,7 +77,8 @@ static void i2c_master_init(void)
 void display_measure_task(void * pvParameter) {
     char buf[20];
     float tc, rh;
-    uint16_t tvoc, eco2, base;
+    uint16_t tvoc, eco2;
+    uint32_t base;
 
     vTaskDelay(2000 / portTICK_PERIOD_MS);
     i2c_lcd1602_clear(lcd2004);
@@ -111,7 +115,7 @@ void display_measure_task(void * pvParameter) {
 
             base = ccs811_get_baseline(ccs811);
             sprintf(buf, "Base: %d", base);
-            i2c_lcd1602_move_cursor(lcd2004, 8, 2);
+            i2c_lcd1602_move_cursor(lcd2004, 6, 2);
             i2c_lcd1602_write_string(lcd2004, buf);
         } else  {
             ESP_LOGE("ccs811", "Unable to retrieve sensor data");
@@ -155,6 +159,59 @@ void i2c_ccs811_init() {
     }
 }
 
+void nvs_init() {
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS partition was truncated and needs to be erased
+        // Retry nvs_flash_init
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK( err );
+
+    err = nvs_open("storage", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE("nvs", "Error (%s) opening NVS handle!", esp_err_to_name(err));
+    } else {
+        ESP_LOGI("nvs", "Successful open of NVS");
+
+        err = nvs_get_u32(my_handle, "nvs_base", &nvs_base);
+        switch (err) {
+            case ESP_OK:
+                ESP_LOGI("nvs", "Successful reading of stored BASELINE param: %d", nvs_base);
+                break;
+            case ESP_ERR_NVS_NOT_FOUND:
+                ESP_LOGW("nvs", "BASELINE param was not found in memory, writing default: %d", nvs_base);
+                err = nvs_set_u32(my_handle, "nvs_base", nvs_base);
+                if(err != ESP_OK) {
+                    ESP_LOGE("nvs", "Error writing default BASELINE to memory");
+                } else {
+                    ESP_LOGI("nvs", "Successful writing of default BASELINE to memory");
+                }
+                
+                break;
+            default :
+                ESP_LOGE("nvs", "Error (%s) reading!", esp_err_to_name(err));
+        }
+
+        // Write default or retrieved BASELINE
+        
+
+        // Commit written value.
+        // After setting any values, nvs_commit() must be called to ensure changes are written
+        // to flash storage. Implementations may write to storage at other times,
+        // but this is not guaranteed.
+        err = nvs_commit(my_handle);
+        if(err != ESP_OK) {
+            ESP_LOGE("nvs", "Error commiting NVS changes");
+        } else {
+            ESP_LOGI("nvs", "Successful commiting NVS changes");
+        }
+        // Close
+        nvs_close(my_handle);
+    }
+}
+
 void app_main()
 {
     ESP_LOGW(TAG, "TRHC-Monitor firmware start");
@@ -163,6 +220,7 @@ void app_main()
     // Initialize I2C Slaves
     i2c_display_init();
     i2c_ccs811_init();
+    nvs_init();
     
     xTaskCreate(&display_measure_task, "display_measure_task", 2048, NULL, 5, NULL);
 }
