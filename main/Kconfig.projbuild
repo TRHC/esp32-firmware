@@ -1,5 +1,4 @@
 menu "TRHC Firmware configuration"
-
 config I2C_MASTER_SCL
     int "I2C Master SCL GPIO number"
 	range 0 34
@@ -44,4 +43,36 @@ config LCD_ROWS
     range 1 20
     default 4
 
+config WIFI_SSID
+    string "WiFi SSID"
+    default "myssid"
+    help
+        SSID (network name) for the example to connect to.
+
+config WIFI_PASSWORD
+    string "WiFi Password"
+    default "mypassword"
+    help
+        WiFi password (WPA or WPA2) for the example to use.
+
+config WIFI_MAXIMUM_RETRY
+    int "Maximum retry"
+    default 5
+    help
+        Set the Maximum retry to avoid station reconnecting to the AP unlimited when the AP is really inexistent.
+
+endmenu
+
+menu "Cayenne MQTT Config"
+config MQTT_USERNAME
+    string "MQTT Username"
+    default "username"
+
+config MQTT_PASSWORD
+    string "MQTT Password"
+    default "password"
+
+config MQTT_CLIENT_ID
+    string "MQTT Client ID"
+    default "client_id"
 endmenu
