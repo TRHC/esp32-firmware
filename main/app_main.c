@@ -1,7 +1,3 @@
-/**
- * @file app_main.c
- */
-
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -12,6 +8,7 @@
 #include "esp_event_loop.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
+#include "driver/touch_pad.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
 #include "lwip/sockets.h"
@@ -19,18 +16,22 @@
 #include "lwip/netdb.h"
 #include "sdkconfig.h"
 #include "rom/uart.h"
+#include "soc/rtc_cntl_reg.h"
+#include "soc/sens_reg.h"
 #include "mqtt_client.h"
 #include "nvs_flash.h"
 #include "nvs.h"
-
 
 #include "smbus.h"
 #include "i2c-lcd1602.h"
 #include "si7021.h"
 #include "ccs811.h"
 
+#include "chars.h"
+
 #define TAG "app"
 
+// I2C Configuration
 #define I2C_MASTER_NUM           I2C_NUM_0
 #define I2C_MASTER_TX_BUF_LEN    0                     // disabled
 #define I2C_MASTER_RX_BUF_LEN    0                     // disabled
@@ -38,67 +39,34 @@
 #define I2C_MASTER_SDA_IO        CONFIG_I2C_MASTER_SDA
 #define I2C_MASTER_SCL_IO        CONFIG_I2C_MASTER_SCL
 
+// Touch pad Configuration
+#define TOUCH_THRESH_NO_USE   (0)
+#define TOUCH_THRESH_PERCENT  (80)
+#define TOUCHPAD_FILTER_TOUCH_PERIOD (10)
+#define TOUCH_PAD_NUMBER      (3)
+
 // WiFi Configuration
 /* FreeRTOS event group to signal when we are connected*/
 static EventGroupHandle_t s_wifi_event_group; // Event group
-const int WIFI_CONNECTED_BIT = BIT0;          // 1st bit of event group
-static int s_retry_num = 0;
 
 static i2c_lcd1602_info_t * lcd2004;
 static ccs811_sensor_t* ccs811;
+static float tc, rh;
+static uint16_t tvoc, eco2, base;
+static int s_retry_num = 0;
+static bool s_pad_activated;
+static bool s_display_meas = true;
+static bool p_display_meas = true;
+static bool s_ccs811_res;
 
+TaskHandle_t xHandle;
 nvs_handle my_handle;
-uint16_t nvs_base = 93000;
+uint16_t nvs_base = 4000;
 
 static EventGroupHandle_t s_mqtt_event_group; // Event group
 esp_mqtt_client_handle_t mqtt_client;
 
-uint8_t temp[8] = {
-    0b00100,
-    0b01010,
-    0b01010,
-    0b01110,
-    0b01110,
-    0b11111,
-    0b11111,
-    0b01110
-};
-
-uint8_t drop[8] = {
-    0b00100,
-    0b00100,
-    0b01010,
-    0b01010,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b01110,
-};
-
-uint8_t lobit[8] = {
-    0b11111,
-	0b10001,
-	0b11111,
-	0b00000,
-	0b01110,
-	0b10001,
-	0b01010,
-	0b00100
-};
-
-uint8_t hibit[8] = {
-    0b11111,
-	0b11111,
-	0b11111,
-	0b00000,
-	0b01110,
-	0b11111,
-	0b01110,
-	0b00100
-};
-
-static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
-{
+static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event) {
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI("mqtt", "MQTT_EVENT_CONNECTED");
@@ -108,34 +76,18 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
             xEventGroupClearBits(s_mqtt_event_group, BIT0);
             ESP_LOGI("mqtt", "MQTT_EVENT_DISCONNECTED");
             break;
-        case MQTT_EVENT_SUBSCRIBED:
-            ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-            break;
-        case MQTT_EVENT_UNSUBSCRIBED:
-            ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
-            break;
-        case MQTT_EVENT_PUBLISHED:
-            ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
-            break;
-        case MQTT_EVENT_DATA:
-            ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-            printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
-            printf("DATA=%.*s\r\n", event->data_len, event->data);
-            break;
         case MQTT_EVENT_ERROR:
-            ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
+            ESP_LOGE("mqtt", "MQTT_EVENT_ERROR");
             break;
         default:
-            ESP_LOGI(TAG, "Other event id:%d", event->event_id);
             break;
     }
     return ESP_OK;
 }
 
 static void mqtt_app_start(void) {
-    s_mqtt_event_group = xEventGroupCreate();
     esp_mqtt_client_config_t mqtt_cfg = {
-        .host = "mqtt.mydevices.com",
+        .host = "shpag.ga",
         .client_id = CONFIG_MQTT_CLIENT_ID,
         .username = CONFIG_MQTT_USERNAME,
         .password = CONFIG_MQTT_PASSWORD,
@@ -156,14 +108,14 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event) {
         ESP_LOGI("wifi", "Got IP: %s",
                  ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
         s_retry_num = 0;
-        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        xEventGroupSetBits(s_wifi_event_group, BIT0);
         mqtt_app_start();
         break;
     case SYSTEM_EVENT_STA_DISCONNECTED:
         {
             if (s_retry_num < CONFIG_WIFI_MAXIMUM_RETRY) {
+                xEventGroupClearBits(s_wifi_event_group, BIT0);
                 esp_wifi_connect();
-                xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
                 s_retry_num++;
                 ESP_LOGI("wifi", "retry to connect to the AP");
             }
@@ -177,8 +129,6 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event) {
 }
 
 void wifi_init_sta() {
-    s_wifi_event_group = xEventGroupCreate();
-
     tcpip_adapter_init();
     ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL) );
 
@@ -215,70 +165,133 @@ static void i2c_master_init(void) {
                        I2C_MASTER_TX_BUF_LEN, 0);
 }
 
-void display_measure_task(void * pvParameter) {
+void mqtt_task(void * pvParameter) {
     char buf[100];
-    char buf1[100];
-    float tc, rh;
-    uint16_t tvoc, eco2, base;
+
+    vTaskDelay(7000 / portTICK_PERIOD_MS);
+    while(true) {
+        if(xEventGroupGetBits(s_wifi_event_group)) {
+            if(xEventGroupGetBits(s_mqtt_event_group)) {
+                sprintf(buf, "%.2f,%.2f,%d,%d", tc, rh, tvoc, eco2);
+                esp_mqtt_client_publish(mqtt_client, "esp32_iot/sense", buf, 0, 2, 0);
+                //sprintf(buf, "%.2f,%.2f", tc, rh);
+                //esp_mqtt_client_publish(mqtt_client, "esp32_iot/si7021", buf, 0, 2, 0);
+            }
+        }
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
+    }
+}
+
+void display_status() {
+    i2c_lcd1602_move_cursor(lcd2004, 17, 0);
+
+    if(s_display_meas) {  
+       i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_7); 
+    } else {
+       i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_6);
+    }
+
+    if(xEventGroupGetBits(s_mqtt_event_group)) {
+        i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_5);
+    } else {
+        i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_4);
+    }
+
+    if(xEventGroupGetBits(s_wifi_event_group)) {
+        i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_3);
+    } else {
+        i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_2);
+    }
+}
+
+void display_env() {
+    char buf[20];
+    sprintf(buf, "RelH: %.2f%%", rh);
+    i2c_lcd1602_move_cursor(lcd2004, 0, 0);
+    i2c_lcd1602_write_string(lcd2004, buf);
+    i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_1);
+
+    sprintf(buf, "Temp: %.2fC", tc);
+    i2c_lcd1602_move_cursor(lcd2004, 0, 1);
+    i2c_lcd1602_write_string(lcd2004, buf);
+    i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_0);
+}
+
+void display_air() {
+    char buf[20];
+
+    sprintf(buf, "TVOC: %uppb", tvoc);
+    i2c_lcd1602_move_cursor(lcd2004, 0, 2);
+    i2c_lcd1602_write_string(lcd2004, "    ");
+    i2c_lcd1602_move_cursor(lcd2004, 0, 2);
+    i2c_lcd1602_write_string(lcd2004, buf);
+
+    sprintf(buf, "eCO2: %uppm", eco2);
+    i2c_lcd1602_move_cursor(lcd2004, 0, 3);
+    i2c_lcd1602_write_string(lcd2004, "    ");
+    i2c_lcd1602_move_cursor(lcd2004, 0, 3);
+    i2c_lcd1602_write_string(lcd2004, buf);
+}
+
+void display_info() {
+    char buf[60];
+
+    i2c_lcd1602_move_cursor(lcd2004, 14, 3);
+    i2c_lcd1602_write_string(lcd2004, "v3.0.1");
+
+    i2c_lcd1602_move_cursor(lcd2004, 12, 2);
+    i2c_lcd1602_write_string(lcd2004, "g.betsan");
+
+    sprintf(buf, "Mem: %dKB", esp_get_free_heap_size() / 1024);
+    i2c_lcd1602_move_cursor(lcd2004, 0, 0);
+    i2c_lcd1602_write_string(lcd2004, buf);
+    //i2c_lcd1602_write_string(lcd2004, "Ri: T H _");
+    
+    esp_chip_info_t chip;
+    esp_chip_info(&chip);
+    sprintf(buf, "Rev: %d", chip.revision);
+    i2c_lcd1602_move_cursor(lcd2004, 0, 1);
+    i2c_lcd1602_write_string(lcd2004, buf);
+    //i2c_lcd1602_write_string(lcd2004, "Lo: T H q");
+
+    sprintf(buf, "Base: %d", ccs811_get_baseline(ccs811));
+    i2c_lcd1602_move_cursor(lcd2004, 0, 3);
+    i2c_lcd1602_write_string(lcd2004, "          ");
+    i2c_lcd1602_move_cursor(lcd2004, 0, 3);
+    i2c_lcd1602_write_string(lcd2004, buf); 
+}
+
+void display_measure_task(void * pvParameter) {
+    char buf[20], buf1[20];
 
     vTaskDelay(2000 / portTICK_PERIOD_MS);
     i2c_lcd1602_clear(lcd2004);
-    i2c_lcd1602_move_cursor(lcd2004, 12, 3);
-    i2c_lcd1602_write_string(lcd2004, "g.betsan");
 
     while(true) {
         // Retrive env. data and compensate CCS811
         tc = si7021_read_temperature();
         rh = si7021_read_humidity();
         ccs811_set_environmental_data(ccs811, tc, rh);
+        s_ccs811_res = ccs811_get_results(ccs811, &tvoc, &eco2, 0, 0);
 
-        i2c_lcd1602_move_cursor(lcd2004, 19, 0);
-        if(xEventGroupGetBits(s_wifi_event_group)) {
-            i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_3);
-        } else {
-            i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_2);
+        if(s_pad_activated) {
+            s_display_meas = !s_display_meas;
+            i2c_lcd1602_clear(lcd2004);
         }
 
-        if(xEventGroupGetBits(s_mqtt_event_group)) {
-            sprintf(buf1, "v1/%s/things/%s/data/0", CONFIG_MQTT_USERNAME, CONFIG_MQTT_CLIENT_ID);
-            sprintf(buf, "temp,c=%.2f", tc);
-            esp_mqtt_client_publish(mqtt_client, buf1, buf, 0, 2, 0);
-            
-            sprintf(buf1, "v1/%s/things/%s/data/1", CONFIG_MQTT_USERNAME, CONFIG_MQTT_CLIENT_ID);
-            sprintf(buf, "rel_hum,p=%.2f", rh);
-            esp_mqtt_client_publish(mqtt_client, buf1, buf, 0, 2, 0);
+        display_status();
+        if(s_display_meas) {
+            display_env();
+            if (s_ccs811_res) {
+                display_air();
+            } else  {
+                ESP_LOGE("ccs811", "Unable to retrieve sensor data");
+            } 
         } else {
-
+            display_info();
         }
 
-        sprintf(buf, "%.2f", rh);
-        i2c_lcd1602_move_cursor(lcd2004, 0, 0);
-        i2c_lcd1602_write_string(lcd2004, buf);
-        i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_1);
-
-        sprintf(buf, "%.2f", tc);
-        i2c_lcd1602_move_cursor(lcd2004, 0, 1);
-        i2c_lcd1602_write_string(lcd2004, buf);
-        i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_0);
-
-        if (ccs811_get_results(ccs811, &tvoc, &eco2, 0, 0)) {
-            sprintf(buf, "TVOC: %u", tvoc);
-            i2c_lcd1602_move_cursor(lcd2004, 0, 2);
-            i2c_lcd1602_write_string(lcd2004, buf);
-
-            sprintf(buf, "eCO2: %u", eco2);
-            i2c_lcd1602_move_cursor(lcd2004, 0, 3);
-            i2c_lcd1602_write_string(lcd2004, buf);
-
-            base = ccs811_get_baseline(ccs811);
-            sprintf(buf, "B: %u", base);
-            i2c_lcd1602_move_cursor(lcd2004, 12, 2);
-            i2c_lcd1602_write_string(lcd2004, buf);
-        } else  {
-            ESP_LOGE("ccs811", "Unable to retrieve sensor data");
-        } 
-
-
+        s_pad_activated = false;
         vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
 }
@@ -302,8 +315,12 @@ void i2c_display_init() {
         i2c_lcd1602_write_string(lcd2004, "v0.0.1");
         i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_0, temp);
         i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_1, drop);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_2, lobit);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_3, hibit);
+        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_2, wifi_off);
+        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_3, wifi_on);
+        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_4, mqtt_off);
+        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_5, mqtt_on);
+        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_6, tp_on);
+        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_7, tp_off);
     } else {
         ESP_LOGE("lcd", "Unable to init LCD");
     }
@@ -354,12 +371,6 @@ void nvs_init() {
         }
 
         // Write default or retrieved BASELINE
-        
-
-        // Commit written value.
-        // After setting any values, nvs_commit() must be called to ensure changes are written
-        // to flash storage. Implementations may write to storage at other times,
-        // but this is not guaranteed.
         err = nvs_commit(my_handle);
         if(err != ESP_OK) {
             ESP_LOGE("nvs", "Error commiting NVS changes");
@@ -371,9 +382,40 @@ void nvs_init() {
     }
 }
 
+static void tp_rtc_intr(void * arg) {
+    uint32_t pad_intr = touch_pad_get_status();
+    touch_pad_clear_status();
+
+    if ((pad_intr >> TOUCH_PAD_NUMBER) & 0x01) {
+        s_pad_activated = true;
+    }
+}
+
+void tp_init() {
+    uint16_t touch_value;
+
+    touch_pad_init();
+    touch_pad_set_fsm_mode(TOUCH_FSM_MODE_TIMER);
+    touch_pad_set_voltage(TOUCH_HVOLT_2V7, TOUCH_LVOLT_0V5, TOUCH_HVOLT_ATTEN_1V);
+    touch_pad_config(TOUCH_PAD_NUMBER, TOUCH_THRESH_NO_USE);
+    touch_pad_filter_start(TOUCHPAD_FILTER_TOUCH_PERIOD);
+
+    touch_pad_read_filtered(TOUCH_PAD_NUMBER, &touch_value);
+    ESP_LOGI("tp", "touch pad val is %d", touch_value);
+    ESP_ERROR_CHECK(touch_pad_set_thresh(TOUCH_PAD_NUMBER, touch_value * TOUCH_THRESH_PERCENT / 100));
+
+    touch_pad_isr_register(tp_rtc_intr, NULL);
+    touch_pad_intr_enable();
+
+}
+
 void app_main() {
     ESP_LOGW(TAG, "TRHC-Monitor firmware start");
+    s_mqtt_event_group = xEventGroupCreate();
+    s_wifi_event_group = xEventGroupCreate();
+
     nvs_init();
+    tp_init();
     i2c_master_init();
 
     // Initialize I2C Slaves
@@ -381,6 +423,7 @@ void app_main() {
     i2c_ccs811_init();
     
     xTaskCreate(&display_measure_task, "display_measure_task", 2048, NULL, 5, NULL);
+    xTaskCreate(&mqtt_task, "mqtt_task", 2048, NULL, 4, NULL);
     wifi_init_sta();
 }
 
