@@ -35,36 +35,29 @@
 #define I2C_MASTER_NUM           I2C_NUM_0
 #define I2C_MASTER_TX_BUF_LEN    0                     // disabled
 #define I2C_MASTER_RX_BUF_LEN    0                     // disabled
-#define I2C_MASTER_FREQ_HZ       100000
+#define I2C_MASTER_FREQ_HZ       80000
 #define I2C_MASTER_SDA_IO        CONFIG_I2C_MASTER_SDA
 #define I2C_MASTER_SCL_IO        CONFIG_I2C_MASTER_SCL
 
-// Touch pad Configuration
-#define TOUCH_THRESH_NO_USE   (0)
-#define TOUCH_THRESH_PERCENT  (80)
-#define TOUCHPAD_FILTER_TOUCH_PERIOD (10)
-#define TOUCH_PAD_NUMBER      (3)
-
 // WiFi Configuration
-/* FreeRTOS event group to signal when we are connected*/
-static EventGroupHandle_t s_wifi_event_group; // Event group
-
+static EventGroupHandle_t s_wifi_event_group;
+static EventGroupHandle_t s_mqtt_event_group;
 static i2c_lcd1602_info_t * lcd2004;
 static ccs811_sensor_t* ccs811;
+static esp_mqtt_client_handle_t mqtt_client;
+static nvs_handle my_handle;
+
 static float tc, rh;
 static uint16_t tvoc, eco2, base;
-static int s_retry_num = 0;
+static uint16_t nvs_base = 4000;
+static uint8_t  s_retry_num = 0;
 static bool s_pad_activated;
 static bool s_display_meas = true;
-static bool p_display_meas = true;
 static bool s_ccs811_res;
+static bool s_ccs881_ready;
 
-TaskHandle_t xHandle;
-nvs_handle my_handle;
-uint16_t nvs_base = 4000;
 
-static EventGroupHandle_t s_mqtt_event_group; // Event group
-esp_mqtt_client_handle_t mqtt_client;
+
 
 static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event) {
     switch (event->event_id) {
@@ -172,10 +165,12 @@ void mqtt_task(void * pvParameter) {
     while(true) {
         if(xEventGroupGetBits(s_wifi_event_group)) {
             if(xEventGroupGetBits(s_mqtt_event_group)) {
-                sprintf(buf, "%.2f,%.2f,%d,%d", tc, rh, tvoc, eco2);
-                esp_mqtt_client_publish(mqtt_client, "esp32_iot/sense", buf, 0, 2, 0);
-                //sprintf(buf, "%.2f,%.2f", tc, rh);
-                //esp_mqtt_client_publish(mqtt_client, "esp32_iot/si7021", buf, 0, 2, 0);
+                sprintf(buf, "%.2f,%.2f", tc, rh);
+                esp_mqtt_client_publish(mqtt_client, "esp32_iot/env_data", buf, 0, 2, 0);
+                if(s_ccs881_ready) {
+                    sprintf(buf, "%d,%d", tvoc, eco2);
+                    esp_mqtt_client_publish(mqtt_client, "esp32_iot/air_quality", buf, 0, 2, 0);
+                }
             }
         }
         vTaskDelay(5000 / portTICK_PERIOD_MS);
@@ -296,6 +291,13 @@ void display_measure_task(void * pvParameter) {
     }
 }
 
+void ccs811_ready_task(void * pvParameter) {
+    vTaskDelay(60000 * CONFIG_CCS811_READY_MIN / portTICK_PERIOD_MS);
+    ESP_LOGW("ccs811", "Setting CCS811 sensor in ready-state");
+    s_ccs881_ready = true;
+    vTaskDelete(NULL);
+}
+
 void i2c_display_init() {
     // Set up the SMBus
     smbus_info_t * smbus_info = smbus_malloc();
@@ -338,8 +340,6 @@ void i2c_ccs811_init() {
 void nvs_init() {
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        // NVS partition was truncated and needs to be erased
-        // Retry nvs_flash_init
         ESP_ERROR_CHECK(nvs_flash_erase());
         err = nvs_flash_init();
     }
@@ -386,7 +386,7 @@ static void tp_rtc_intr(void * arg) {
     uint32_t pad_intr = touch_pad_get_status();
     touch_pad_clear_status();
 
-    if ((pad_intr >> TOUCH_PAD_NUMBER) & 0x01) {
+    if ((pad_intr >> CONFIG_TOUCH_INFO_NUMBER) & 0x01) {
         s_pad_activated = true;
     }
 }
@@ -397,12 +397,12 @@ void tp_init() {
     touch_pad_init();
     touch_pad_set_fsm_mode(TOUCH_FSM_MODE_TIMER);
     touch_pad_set_voltage(TOUCH_HVOLT_2V7, TOUCH_LVOLT_0V5, TOUCH_HVOLT_ATTEN_1V);
-    touch_pad_config(TOUCH_PAD_NUMBER, TOUCH_THRESH_NO_USE);
-    touch_pad_filter_start(TOUCHPAD_FILTER_TOUCH_PERIOD);
+    touch_pad_config(CONFIG_TOUCH_INFO_NUMBER, 0);
+    touch_pad_filter_start(CONFIG_TOUCH_FILTER_PERIOD);
 
-    touch_pad_read_filtered(TOUCH_PAD_NUMBER, &touch_value);
+    touch_pad_read_filtered(CONFIG_TOUCH_INFO_NUMBER, &touch_value);
     ESP_LOGI("tp", "touch pad val is %d", touch_value);
-    ESP_ERROR_CHECK(touch_pad_set_thresh(TOUCH_PAD_NUMBER, touch_value * TOUCH_THRESH_PERCENT / 100));
+    ESP_ERROR_CHECK(touch_pad_set_thresh(CONFIG_TOUCH_INFO_NUMBER, touch_value * CONFIG_TOUCH_THRESH_PERCENT / 100));
 
     touch_pad_isr_register(tp_rtc_intr, NULL);
     touch_pad_intr_enable();
@@ -425,5 +425,6 @@ void app_main() {
     xTaskCreate(&display_measure_task, "display_measure_task", 2048, NULL, 5, NULL);
     xTaskCreate(&mqtt_task, "mqtt_task", 2048, NULL, 4, NULL);
     wifi_init_sta();
+    xTaskCreate(&ccs811_ready_task, "ccs811_ready_task", 1512, NULL, 5, NULL);
 }
 

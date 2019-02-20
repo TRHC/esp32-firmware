@@ -5,3 +5,6 @@
 	path = components/esp32-i2c-lcd1602
 	url = https://github.com/DavidAntliff/esp32-i2c-lcd1602.git
 
+[submodule "components/esp32-si7021"]
+	path = components/esp32-si7021
+	url = https://github.com/NSBum/esp32-si7021
