@@ -37,6 +37,9 @@ menu "Slave configuration"
 config CCS811_READY_MIN
    int "Wait n minutes before sending data from CCS811"
    default 20
+config CCS811_BASE_SAVE_PERIOD
+   int "Save CCS811 Baseline to NVS every n minutes"
+   default 60
 config LCD_COLUMNS
     int "LCD Display number of columns"
     range 1 20

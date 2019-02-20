@@ -48,7 +48,7 @@ static esp_mqtt_client_handle_t mqtt_client;
 static nvs_handle my_handle;
 
 static float tc, rh;
-static uint16_t tvoc, eco2, base;
+static uint16_t tvoc, eco2, baseline;
 static uint16_t nvs_base = 4000;
 static uint8_t  s_retry_num = 0;
 static bool s_pad_activated;
@@ -168,7 +168,7 @@ void mqtt_task(void * pvParameter) {
                 sprintf(buf, "%.2f,%.2f", tc, rh);
                 esp_mqtt_client_publish(mqtt_client, "esp32_iot/env_data", buf, 0, 2, 0);
                 if(s_ccs881_ready) {
-                    sprintf(buf, "%d,%d", tvoc, eco2);
+                    sprintf(buf, "%d,%d,%d", tvoc, eco2, baseline);
                     esp_mqtt_client_publish(mqtt_client, "esp32_iot/air_quality", buf, 0, 2, 0);
                 }
             }
@@ -249,7 +249,7 @@ void display_info() {
     i2c_lcd1602_write_string(lcd2004, buf);
     //i2c_lcd1602_write_string(lcd2004, "Lo: T H q");
 
-    sprintf(buf, "Base: %d", ccs811_get_baseline(ccs811));
+    sprintf(buf, "Base: %d", baseline);
     i2c_lcd1602_move_cursor(lcd2004, 0, 3);
     i2c_lcd1602_write_string(lcd2004, "          ");
     i2c_lcd1602_move_cursor(lcd2004, 0, 3);
@@ -268,6 +268,7 @@ void display_measure_task(void * pvParameter) {
         rh = si7021_read_humidity();
         ccs811_set_environmental_data(ccs811, tc, rh);
         s_ccs811_res = ccs811_get_results(ccs811, &tvoc, &eco2, 0, 0);
+        baseline     = ccs811_get_baseline(ccs811);
 
         if(s_pad_activated) {
             s_display_meas = !s_display_meas;
@@ -294,8 +295,16 @@ void display_measure_task(void * pvParameter) {
 void ccs811_ready_task(void * pvParameter) {
     vTaskDelay(60000 * CONFIG_CCS811_READY_MIN / portTICK_PERIOD_MS);
     ESP_LOGW("ccs811", "Setting CCS811 sensor in ready-state");
+    ccs811_set_baseline(ccs811, nvs_base);
     s_ccs881_ready = true;
-    vTaskDelete(NULL);
+    while(true) {
+        vTaskDelay(60000 * CONFIG_CCS811_BASE_SAVE_PERIOD / portTICK_PERIOD_MS);
+        nvs_open("storage", NVS_READWRITE, &my_handle);
+        nvs_commit(my_handle);
+        nvs_set_u16(my_handle, "nvs_base", baseline);
+        nvs_close(my_handle);
+        ESP_LOGW("ccs811", "Successful save of BASELINE param");
+    }
 }
 
 void i2c_display_init() {
