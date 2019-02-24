@@ -28,6 +28,8 @@
 #include "ccs811.h"
 
 #include "chars.h"
+#include "app_mqtt.h"
+#include "app_wifi.h"
 
 #define TAG "app"
 
@@ -55,93 +57,6 @@ static bool s_pad_activated;
 static bool s_display_meas = true;
 static bool s_ccs811_res;
 static bool s_ccs881_ready;
-
-
-
-
-static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event) {
-    switch (event->event_id) {
-        case MQTT_EVENT_CONNECTED:
-            ESP_LOGI("mqtt", "MQTT_EVENT_CONNECTED");
-            xEventGroupSetBits(s_mqtt_event_group, BIT0);
-            break;
-        case MQTT_EVENT_DISCONNECTED:
-            xEventGroupClearBits(s_mqtt_event_group, BIT0);
-            ESP_LOGI("mqtt", "MQTT_EVENT_DISCONNECTED");
-            break;
-        case MQTT_EVENT_ERROR:
-            ESP_LOGE("mqtt", "MQTT_EVENT_ERROR");
-            break;
-        default:
-            break;
-    }
-    return ESP_OK;
-}
-
-static void mqtt_app_start(void) {
-    esp_mqtt_client_config_t mqtt_cfg = {
-        .host = "shpag.ga",
-        .client_id = CONFIG_MQTT_CLIENT_ID,
-        .username = CONFIG_MQTT_USERNAME,
-        .password = CONFIG_MQTT_PASSWORD,
-        .event_handle = mqtt_event_handler,
-        // .user_context = (void *)your_context
-    };
-
-    mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
-    esp_mqtt_client_start(mqtt_client);
-}
-
-static esp_err_t wifi_event_handler(void *ctx, system_event_t *event) {
-    switch(event->event_id) {
-    case SYSTEM_EVENT_STA_START:
-        esp_wifi_connect();
-        break;
-    case SYSTEM_EVENT_STA_GOT_IP:
-        ESP_LOGI("wifi", "Got IP: %s",
-                 ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
-        s_retry_num = 0;
-        xEventGroupSetBits(s_wifi_event_group, BIT0);
-        mqtt_app_start();
-        break;
-    case SYSTEM_EVENT_STA_DISCONNECTED:
-        {
-            if (s_retry_num < CONFIG_WIFI_MAXIMUM_RETRY) {
-                xEventGroupClearBits(s_wifi_event_group, BIT0);
-                esp_wifi_connect();
-                s_retry_num++;
-                ESP_LOGI("wifi", "retry to connect to the AP");
-            }
-            ESP_LOGI("wifi", "connect to the AP fail\n");
-            break;
-        }
-    default:
-        break;
-    }
-    return ESP_OK;
-}
-
-void wifi_init_sta() {
-    tcpip_adapter_init();
-    ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL) );
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = CONFIG_WIFI_SSID,
-            .password = CONFIG_WIFI_PASSWORD
-        },
-    };
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
-    ESP_ERROR_CHECK(esp_wifi_start() );
-
-    ESP_LOGI("wifi", "wifi_init_sta finished.");
-    ESP_LOGI("wifi", "connect to ap SSID:%s password:%s",
-             CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD);
-}
 
 static void i2c_master_init(void) {
     int i2c_master_port = I2C_MASTER_NUM;

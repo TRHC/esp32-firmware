@@ -1,5 +1,7 @@
 {
     "files.associations": {
-        "sdkconfig.h": "c"
+        "sdkconfig.h": "c",
+        "app_main.h": "c",
+        "app_mqtt.h": "c"
     }
 }
