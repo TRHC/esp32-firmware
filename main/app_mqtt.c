@@ -4,10 +4,10 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event) {
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI("mqtt", "MQTT_EVENT_CONNECTED");
-            xEventGroupSetBits(s_mqtt_event_group, BIT0);
+            xEventGroupSetBits(s_network_event_group, BIT1);
             break;
         case MQTT_EVENT_DISCONNECTED:
-            xEventGroupClearBits(s_mqtt_event_group, BIT0);
+            xEventGroupClearBits(s_network_event_group, BIT1);
             ESP_LOGI("mqtt", "MQTT_EVENT_DISCONNECTED");
             break;
         case MQTT_EVENT_ERROR:

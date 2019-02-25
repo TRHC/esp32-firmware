@@ -6,6 +6,7 @@
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_event_loop.h"
+#include "esp_spiffs.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "driver/touch_pad.h"
@@ -30,6 +31,8 @@
 #include "chars.h"
 #include "app_mqtt.h"
 #include "app_wifi.h"
+#include "app_display.h"
+#include "app_tasks.h"
 
 #define TAG "app"
 
@@ -41,22 +44,20 @@
 #define I2C_MASTER_SDA_IO        CONFIG_I2C_MASTER_SDA
 #define I2C_MASTER_SCL_IO        CONFIG_I2C_MASTER_SCL
 
-// WiFi Configuration
-static EventGroupHandle_t s_wifi_event_group;
-static EventGroupHandle_t s_mqtt_event_group;
-static i2c_lcd1602_info_t * lcd2004;
-static ccs811_sensor_t* ccs811;
-static esp_mqtt_client_handle_t mqtt_client;
-static nvs_handle my_handle;
+EventGroupHandle_t s_network_event_group;
+i2c_lcd1602_info_t * lcd2004;
+ccs811_sensor_t* ccs811;
+esp_mqtt_client_handle_t mqtt_client;
+nvs_handle my_handle;
 
-static float tc, rh;
-static uint16_t tvoc, eco2, baseline;
-static uint16_t nvs_base = 4000;
-static uint8_t  s_retry_num = 0;
-static bool s_pad_activated;
-static bool s_display_meas = true;
-static bool s_ccs811_res;
-static bool s_ccs881_ready;
+float tc, rh;
+uint16_t tvoc, eco2, baseline;
+uint16_t nvs_base = 4000;
+uint8_t  s_retry_num = 0;
+bool s_pad_activated;
+bool s_display_meas = true;
+bool s_ccs811_res;
+bool s_ccs881_ready;
 
 static void i2c_master_init(void) {
     int i2c_master_port = I2C_MASTER_NUM;
@@ -71,155 +72,6 @@ static void i2c_master_init(void) {
     i2c_driver_install(i2c_master_port, conf.mode,
                        I2C_MASTER_RX_BUF_LEN,
                        I2C_MASTER_TX_BUF_LEN, 0);
-}
-
-void mqtt_task(void * pvParameter) {
-    char buf[100];
-
-    vTaskDelay(7000 / portTICK_PERIOD_MS);
-    while(true) {
-        if(xEventGroupGetBits(s_wifi_event_group)) {
-            if(xEventGroupGetBits(s_mqtt_event_group)) {
-                sprintf(buf, "%.2f,%.2f", tc, rh);
-                esp_mqtt_client_publish(mqtt_client, "esp32_iot/env_data", buf, 0, 2, 0);
-                if(s_ccs881_ready) {
-                    sprintf(buf, "%d,%d,%d", tvoc, eco2, baseline);
-                    esp_mqtt_client_publish(mqtt_client, "esp32_iot/air_quality", buf, 0, 2, 0);
-                }
-            }
-        }
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
-    }
-}
-
-void display_status() {
-    i2c_lcd1602_move_cursor(lcd2004, 17, 0);
-
-    if(s_display_meas) {  
-       i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_7); 
-    } else {
-       i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_6);
-    }
-
-    if(xEventGroupGetBits(s_mqtt_event_group)) {
-        i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_5);
-    } else {
-        i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_4);
-    }
-
-    if(xEventGroupGetBits(s_wifi_event_group)) {
-        i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_3);
-    } else {
-        i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_2);
-    }
-}
-
-void display_env() {
-    char buf[20];
-    sprintf(buf, "RelH: %.2f%%", rh);
-    i2c_lcd1602_move_cursor(lcd2004, 0, 0);
-    i2c_lcd1602_write_string(lcd2004, buf);
-    i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_1);
-
-    sprintf(buf, "Temp: %.2fC", tc);
-    i2c_lcd1602_move_cursor(lcd2004, 0, 1);
-    i2c_lcd1602_write_string(lcd2004, buf);
-    i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_0);
-}
-
-void display_air() {
-    char buf[20];
-
-    sprintf(buf, "TVOC: %uppb", tvoc);
-    i2c_lcd1602_move_cursor(lcd2004, 0, 2);
-    i2c_lcd1602_write_string(lcd2004, "    ");
-    i2c_lcd1602_move_cursor(lcd2004, 0, 2);
-    i2c_lcd1602_write_string(lcd2004, buf);
-
-    sprintf(buf, "eCO2: %uppm", eco2);
-    i2c_lcd1602_move_cursor(lcd2004, 0, 3);
-    i2c_lcd1602_write_string(lcd2004, "    ");
-    i2c_lcd1602_move_cursor(lcd2004, 0, 3);
-    i2c_lcd1602_write_string(lcd2004, buf);
-}
-
-void display_info() {
-    char buf[60];
-
-    i2c_lcd1602_move_cursor(lcd2004, 14, 3);
-    i2c_lcd1602_write_string(lcd2004, "v3.0.1");
-
-    i2c_lcd1602_move_cursor(lcd2004, 12, 2);
-    i2c_lcd1602_write_string(lcd2004, "g.betsan");
-
-    sprintf(buf, "Mem: %dKB", esp_get_free_heap_size() / 1024);
-    i2c_lcd1602_move_cursor(lcd2004, 0, 0);
-    i2c_lcd1602_write_string(lcd2004, buf);
-    //i2c_lcd1602_write_string(lcd2004, "Ri: T H _");
-    
-    esp_chip_info_t chip;
-    esp_chip_info(&chip);
-    sprintf(buf, "Rev: %d", chip.revision);
-    i2c_lcd1602_move_cursor(lcd2004, 0, 1);
-    i2c_lcd1602_write_string(lcd2004, buf);
-    //i2c_lcd1602_write_string(lcd2004, "Lo: T H q");
-
-    sprintf(buf, "Base: %d", baseline);
-    i2c_lcd1602_move_cursor(lcd2004, 0, 3);
-    i2c_lcd1602_write_string(lcd2004, "          ");
-    i2c_lcd1602_move_cursor(lcd2004, 0, 3);
-    i2c_lcd1602_write_string(lcd2004, buf); 
-}
-
-void display_measure_task(void * pvParameter) {
-    char buf[20], buf1[20];
-
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
-    i2c_lcd1602_clear(lcd2004);
-
-    while(true) {
-        // Retrive env. data and compensate CCS811
-        tc = si7021_read_temperature();
-        rh = si7021_read_humidity();
-        ccs811_set_environmental_data(ccs811, tc, rh);
-        s_ccs811_res = ccs811_get_results(ccs811, &tvoc, &eco2, 0, 0);
-        baseline     = ccs811_get_baseline(ccs811);
-
-        if(s_pad_activated) {
-            s_display_meas = !s_display_meas;
-            i2c_lcd1602_clear(lcd2004);
-        }
-
-        display_status();
-        if(s_display_meas) {
-            display_env();
-            if (s_ccs811_res) {
-                display_air();
-            } else  {
-                ESP_LOGE("ccs811", "Unable to retrieve sensor data");
-            } 
-        } else {
-            display_info();
-        }
-
-        s_pad_activated = false;
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-    }
-}
-
-void ccs811_ready_task(void * pvParameter) {
-    vTaskDelay(60000 * CONFIG_CCS811_READY_MIN / portTICK_PERIOD_MS);
-    ESP_LOGW("ccs811", "Setting CCS811 sensor in ready-state");
-    ccs811_set_baseline(ccs811, nvs_base);
-    s_ccs881_ready = true;
-    while(true) {
-        vTaskDelay(60000 * CONFIG_CCS811_BASE_SAVE_PERIOD / portTICK_PERIOD_MS);
-        nvs_open("storage", NVS_READWRITE, &my_handle);
-        nvs_commit(my_handle);
-        nvs_set_u16(my_handle, "nvs_base", baseline);
-        nvs_close(my_handle);
-        ESP_LOGW("ccs811", "Successful save of BASELINE param");
-    }
 }
 
 void i2c_display_init() {
@@ -333,12 +185,45 @@ void tp_init() {
 
 }
 
+static esp_err_t init_spiffs(void) {
+    ESP_LOGI("spiffs", "Initializing SPIFFS");
+
+    esp_vfs_spiffs_conf_t conf = {
+      .base_path = "/spiffs",
+      .partition_label = NULL,
+      .max_files = 5,   // This decides the maximum number of files that can be created on the storage
+      .format_if_mount_failed = true
+    };
+
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+    if (ret != ESP_OK) {
+        if (ret == ESP_FAIL) {
+            ESP_LOGE("spiffs", "Failed to mount or format filesystem");
+        } else if (ret == ESP_ERR_NOT_FOUND) {
+            ESP_LOGE("spiffs", "Failed to find SPIFFS partition");
+        } else {
+            ESP_LOGE("spiffs", "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+        }
+        return ESP_FAIL;
+    }
+
+    size_t total = 0, used = 0;
+    ret = esp_spiffs_info(NULL, &total, &used);
+    if (ret != ESP_OK) {
+        ESP_LOGE("spiffs", "Failed to get SPIFFS partition information (%s)", esp_err_to_name(ret));
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI("spiffs", "Partition size: total: %d, used: %d", total, used);
+    return ESP_OK;
+}
+
 void app_main() {
     ESP_LOGW(TAG, "TRHC-Monitor firmware start");
-    s_mqtt_event_group = xEventGroupCreate();
-    s_wifi_event_group = xEventGroupCreate();
+    s_network_event_group = xEventGroupCreate();
 
     nvs_init();
+    init_spiffs();
     tp_init();
     i2c_master_init();
 

@@ -6,6 +6,7 @@
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_event_loop.h"
+#include "esp_spiffs.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "driver/touch_pad.h"
@@ -29,25 +30,23 @@
 
 #include "chars.h"
 
-
 #ifndef APP_MAIN_H_   
 #define APP_MAIN_H_
 
 // WiFi Configuration
-static EventGroupHandle_t s_wifi_event_group;
-static EventGroupHandle_t s_mqtt_event_group;
-static i2c_lcd1602_info_t * lcd2004;
-static ccs811_sensor_t* ccs811;
-static esp_mqtt_client_handle_t mqtt_client;
-static nvs_handle my_handle;
+EventGroupHandle_t s_network_event_group;
+i2c_lcd1602_info_t * lcd2004;
+ccs811_sensor_t* ccs811;
+esp_mqtt_client_handle_t mqtt_client;
+nvs_handle my_handle;
 
-static float tc, rh;
-static uint16_t tvoc, eco2, baseline;
-static uint16_t nvs_base;
-static uint8_t  s_retry_num;
-static bool s_pad_activated;
-static bool s_display_meas;
-static bool s_ccs811_res;
-static bool s_ccs881_ready;
+float tc, rh;
+uint16_t tvoc, eco2, baseline;
+uint16_t nvs_base;
+uint8_t  s_retry_num;
+bool s_pad_activated;
+bool s_display_meas;
+bool s_ccs811_res;
+bool s_ccs881_ready;
 
 #endif
