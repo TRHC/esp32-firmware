@@ -37,6 +37,13 @@ static void saveConnectionInfo(const char* ssid, const char* pass) {
 
     nvs_commit(wifi_nvs_handle);
     nvs_close(wifi_nvs_handle);
+    
+    wifi_config_t sta_config;
+    strcpy((void*)sta_config.sta.ssid , ssid);
+    strcpy((void*)sta_config.sta.password , pass);
+
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &sta_config) );
+    esp_wifi_connect();
 }
 
 static esp_err_t http_index_html(httpd_req_t *req) {
@@ -56,13 +63,48 @@ httpd_uri_t index_html = {
     .user_ctx  = NULL
 };
 
-httpd_handle_t start_webserver(void)
-{
+
+static esp_err_t http_conf_form(httpd_req_t *req) {
+    char*  buf;
+    size_t buf_len;
+
+    buf_len = httpd_req_get_url_query_len(req) + 1;
+    if (buf_len > 1) {
+        buf = malloc(buf_len);
+        if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
+            char ssid[32];
+            char pass[64];
+            /* Get value of expected key from query string */
+            if (httpd_query_key_value(buf, "ssid", ssid, sizeof(ssid)) == ESP_OK) {
+                if (httpd_query_key_value(buf, "pass", pass, sizeof(pass)) == ESP_OK) {
+                    saveConnectionInfo(ssid, pass);
+                    httpd_resp_sendstr_chunk(req, "OK");
+                    httpd_resp_sendstr_chunk(req, NULL);
+                    return ESP_OK;
+                }
+            }
+            free(buf);
+        }
+    }
+    httpd_resp_sendstr_chunk(req, "FAIL");
+    httpd_resp_sendstr_chunk(req, NULL);
+    return ESP_FAIL;
+}
+
+httpd_uri_t conf_form = {
+    .uri      = "/conf",
+    .method   = HTTP_GET,
+    .handler  = http_conf_form,
+    .user_ctx = NULL
+};
+
+httpd_handle_t start_webserver(void) {
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 
     if (httpd_start(&server, &config) == ESP_OK) {
         httpd_register_uri_handler(server, &index_html);
+        httpd_register_uri_handler(server, &conf_form);
         return server;
     }
 
@@ -74,14 +116,13 @@ esp_err_t wifi_event_handler(void *ctx, system_event_t *event) {
     switch(event->event_id) {
     case SYSTEM_EVENT_STA_START:
         esp_wifi_connect();
+        start_webserver();
         break;
     case SYSTEM_EVENT_STA_GOT_IP:
-        ESP_LOGI("wifi", "Got IP: %s",
-                 ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_network_event_group, BIT0);
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
         mqtt_app_start();
-        start_webserver();
         break;
     case SYSTEM_EVENT_STA_DISCONNECTED:
         {
@@ -92,6 +133,7 @@ esp_err_t wifi_event_handler(void *ctx, system_event_t *event) {
                 s_retry_num++;
                 ESP_LOGI("wifi", "trying to reconnect to wifi %dth time", s_retry_num);
             } else {
+                ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA) );
                 vTaskDelay(50000 / portTICK_PERIOD_MS);
                 ESP_LOGI("wifi", "lazy attempt to reconnect");
                 esp_wifi_connect();
@@ -111,18 +153,30 @@ void wifi_init_sta() {
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    wifi_config_t wifi_config = {
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA) );
+
+    wifi_config_t sta_config = {
         .sta = {
             .ssid = CONFIG_WIFI_SSID,
             .password = CONFIG_WIFI_PASSWORD
         },
     };
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
-    ESP_ERROR_CHECK(esp_wifi_start() );
+    if(getConnectionInfo() == 0) {
+        strcpy((void*)sta_config.sta.ssid , wifi_conf_ssid);
+        strcpy((void*)sta_config.sta.password , wifi_conf_pass);
+    }
 
-    ESP_LOGI("wifi", "wifi_init_sta finished.");
-    ESP_LOGI("wifi", "connect to ap SSID:%s password:%s",
-             CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD);
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &sta_config) );
+    wifi_config_t ap_config = {
+        .ap = {
+            .ssid = "ESP32-TRHC",
+            .ssid_len = strlen("ESP32-TRHC"),
+            .password = "esp32-trhc",
+            .max_connection = 5,
+            .authmode = WIFI_AUTH_WPA_WPA2_PSK
+        },
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &ap_config) );
+    ESP_ERROR_CHECK(esp_wifi_start() );
 }
