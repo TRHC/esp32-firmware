@@ -42,13 +42,13 @@ void display_air() {
 
     sprintf(buf, "TVOC: %uppb", tvoc);
     i2c_lcd1602_move_cursor(lcd2004, 0, 2);
-    i2c_lcd1602_write_string(lcd2004, "       ");
+    i2c_lcd1602_write_string(lcd2004, "        ");
     i2c_lcd1602_move_cursor(lcd2004, 0, 2);
     i2c_lcd1602_write_string(lcd2004, buf);
 
     sprintf(buf, "eCO2: %uppm", eco2);
     i2c_lcd1602_move_cursor(lcd2004, 0, 3);
-    i2c_lcd1602_write_string(lcd2004, "       ");
+    i2c_lcd1602_write_string(lcd2004, "        ");
     i2c_lcd1602_move_cursor(lcd2004, 0, 3);
     i2c_lcd1602_write_string(lcd2004, buf);
 }

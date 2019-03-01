@@ -71,8 +71,20 @@ config WIFI_SSID
     help
         SSID (network name) for the example to connect to.
 
-config WIFI_PASSWORD
+config WIFI_PASS
     string "WiFi Password"
+    default "mypassword"
+    help
+        WiFi password (WPA or WPA2) for the example to use.
+
+config AP_WIFI_SSID
+    string "AP WiFi SSID"
+    default "ESP 0x01"
+    help
+        SSID (network name) for the example to connect to.
+
+config AP_WIFI_PASS
+    string "AP WiFi Pass"
     default "mypassword"
     help
         WiFi password (WPA or WPA2) for the example to use.

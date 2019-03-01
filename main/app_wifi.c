@@ -43,6 +43,7 @@ static void saveConnectionInfo(const char* ssid, const char* pass) {
     strcpy((void*)sta_config.sta.password , pass);
 
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &sta_config) );
+    ESP_LOGI("wifiConf", "WiFi conf changed: %s", ssid);
     esp_wifi_connect();
 }
 
@@ -158,21 +159,22 @@ void wifi_init_sta() {
     wifi_config_t sta_config = {
         .sta = {
             .ssid = CONFIG_WIFI_SSID,
-            .password = CONFIG_WIFI_PASSWORD
+            .password = CONFIG_WIFI_PASS
         },
     };
 
     if(getConnectionInfo() == 0) {
         strcpy((void*)sta_config.sta.ssid , wifi_conf_ssid);
         strcpy((void*)sta_config.sta.password , wifi_conf_pass);
+        ESP_LOGI("wifiConf", "WiFi conf loaded from mem: %s", wifi_conf_ssid);
     }
 
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &sta_config) );
     wifi_config_t ap_config = {
         .ap = {
-            .ssid = "ESP32-TRHC",
-            .ssid_len = strlen("ESP32-TRHC"),
-            .password = "esp32-trhc",
+            .ssid = CONFIG_AP_WIFI_SSID,
+            .ssid_len = strlen(CONFIG_AP_WIFI_SSID),
+            .password = CONFIG_AP_WIFI_PASS,
             .max_connection = 5,
             .authmode = WIFI_AUTH_WPA_WPA2_PSK
         },

@@ -4,11 +4,11 @@
 void mqtt_task(void * pvParameter) {
     char buf[100];
     EventBits_t uxBits;
-
+    ESP_LOGI("mqtt", "Task registered");
     vTaskDelay(7000 / portTICK_PERIOD_MS);
     while(true) {
-        uxBits = s_network_event_group;
-        if(uxBits & 0b11) {
+        uxBits = xEventGroupWaitBits(s_network_event_group, BIT0 | BIT1, false, true, portTICK_PERIOD_MS );
+        if(uxBits & BIT1) {
             sprintf(buf, "%.2f,%.2f", tc, rh);
             esp_mqtt_client_publish(mqtt_client, "esp32_iot/env_data", buf, 0, 2, 0);
             if(s_ccs881_ready) {
