@@ -162,31 +162,38 @@ void nvs_init() {
     }
 }
 
-static void tp_rtc_intr(void * arg) {
-    uint32_t pad_intr = touch_pad_get_status();
-    touch_pad_clear_status();
-
-    if ((pad_intr >> CONFIG_TOUCH_INFO_NUMBER) & 0x01) {
-        s_pad_activated = true;
-    }
+static void tp_a_cb(tp_handle_t tp_dev) {
+    xEventGroupSetBits(s_status_event_group, (BIT0 | BIT1));
 }
 
-void tp_init() {
-    uint16_t touch_value;
+static void tp_b_cb(tp_handle_t tp_dev) {
+    gpio_set_level(12, 0);
+}
 
-    touch_pad_init();
-    touch_pad_set_fsm_mode(TOUCH_FSM_MODE_TIMER);
-    touch_pad_set_voltage(TOUCH_HVOLT_2V7, TOUCH_LVOLT_0V5, TOUCH_HVOLT_ATTEN_1V);
-    touch_pad_config(CONFIG_TOUCH_INFO_NUMBER, 0);
-    touch_pad_filter_start(CONFIG_TOUCH_FILTER_PERIOD);
+static void tp_b_hold_cb(tp_handle_t tp_dev) {
+    gpio_set_level(12, 1);
+}
 
-    touch_pad_read_filtered(CONFIG_TOUCH_INFO_NUMBER, &touch_value);
-    ESP_LOGI("tp", "touch pad val is %d", touch_value);
-    ESP_ERROR_CHECK(touch_pad_set_thresh(CONFIG_TOUCH_INFO_NUMBER, touch_value * CONFIG_TOUCH_THRESH_PERCENT / 100));
+static void tp_init() {
+    tp_handle_t a_tp_handle = iot_tp_create(CONFIG_TOUCH_A_NUMBER, 0.1);
+    iot_tp_add_cb(a_tp_handle, TOUCHPAD_CB_TAP, tp_a_cb, NULL);
 
-    touch_pad_isr_register(tp_rtc_intr, NULL);
-    touch_pad_intr_enable();
+    tp_handle_t b_tp_handle = iot_tp_create(CONFIG_TOUCH_B_NUMBER, 0.1);
+    iot_tp_add_cb(b_tp_handle, TOUCHPAD_CB_TAP, tp_b_cb, NULL);
+    iot_tp_add_custom_cb(b_tp_handle, 1, tp_b_hold_cb, NULL);
+    ESP_LOGI("touch", "Added TPs");
+}
 
+void gpio_init() {
+    gpio_config_t io_conf;
+    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = GPIO_SEL_12;
+    io_conf.pull_down_en = 0;
+    io_conf.pull_up_en = 0;
+
+    gpio_config(&io_conf);
+    gpio_set_level(12, 0);
 }
 
 static esp_err_t init_spiffs(void) {
@@ -232,15 +239,16 @@ void app_main() {
     s_network_event_group = xEventGroupCreate();
     s_status_event_group  = xEventGroupCreate();
 
+
     nvs_init();
     init_spiffs();
     tp_init();
-    
+    gpio_init();
+    wifi_init_sta();
+
     xTaskCreate(&display_task, "display_task", 2048, NULL, 5, NULL);
     xTaskCreate(&mqtt_task, "mqtt_task", 2048, NULL, 4, NULL);
-    xTaskCreate(&watch_task, "watch_task", 2048, NULL, 4, NULL);
     xTaskCreate(&measure_task, "measure_task", 2048, NULL, 4, NULL);
-    wifi_init_sta();
     xTaskCreate(&ccs811_ready_task, "ccs811_ready_task", 1512, NULL, 5, NULL);
 }
 

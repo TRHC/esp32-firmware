@@ -36,15 +36,8 @@ void measure_task(void * pvParameter) {
         // ccs811_set_environmental_data(ccs811, tc, rh);
         s_ccs811_res = ccs811_get_results(ccs811, &tvoc, &eco2, 0, 0);
         baseline     = ccs811_get_baseline(ccs811);
-        vTaskDelay(3000 / portTICK_PERIOD_MS);
-    }
-}
-
-void watch_task(void * pvParameter) {
-    vTaskDelay(3000 / portTICK_PERIOD_MS);
-    while(true) {
         xEventGroupSetBits(s_status_event_group, BIT0);
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
+        vTaskDelay(3000 / portTICK_PERIOD_MS);
     }
 }
 
@@ -52,15 +45,16 @@ void display_task(void * pvParameter) {
     char buf[20], buf1[20];
     EventBits_t uxBits;
 
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
-    i2c_lcd1602_clear(lcd2004);
 
     while(true) {
         // Retrive env. data and compensate CCS811
         uxBits = xEventGroupWaitBits(s_status_event_group, BIT0, false, true, portTICK_PERIOD_MS );
-        xEventGroupClearBits(s_status_event_group, BIT0);
         if (uxBits & BIT0) {
-            if(s_pad_activated) {
+            xEventGroupClearBits(s_status_event_group, BIT0);
+
+            uxBits = xEventGroupWaitBits(s_status_event_group, BIT1, false, true, portTICK_PERIOD_MS );
+            if(uxBits & BIT1) {
+                xEventGroupClearBits(s_status_event_group, BIT1);
                 s_display_meas = !s_display_meas;
                 i2c_lcd1602_clear(lcd2004);
             }
@@ -79,7 +73,6 @@ void display_task(void * pvParameter) {
                 display_info();
             }
 
-            s_pad_activated = false;
         }
     }
 }
@@ -87,6 +80,7 @@ void display_task(void * pvParameter) {
 void ccs811_ready_task(void * pvParameter) {
     vTaskDelay(60000 * CONFIG_CCS811_READY_MIN / portTICK_PERIOD_MS);
     ESP_LOGW("ccs811", "Setting CCS811 sensor in ready-state");
+
     ccs811_set_baseline(ccs811, nvs_base);
     s_ccs881_ready = true;
     while(true) {
