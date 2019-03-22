@@ -35,6 +35,7 @@
 
 // WiFi Configuration
 EventGroupHandle_t s_network_event_group;
+EventGroupHandle_t s_status_event_group;
 i2c_lcd1602_info_t * lcd2004;
 ccs811_sensor_t* ccs811;
 esp_mqtt_client_handle_t mqtt_client;
@@ -48,5 +49,7 @@ bool s_pad_activated;
 bool s_display_meas;
 bool s_ccs811_res;
 bool s_ccs881_ready;
+bool s_temp_measured;
+
 
 #endif

@@ -37,6 +37,16 @@ void display_env() {
     i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_0);
 }
 
+void display_error() {
+    i2c_lcd1602_clear(lcd2004);
+    i2c_lcd1602_move_cursor(lcd2004, 0, 0);
+    i2c_lcd1602_write_string(lcd2004, "No sensors");
+    i2c_lcd1602_move_cursor(lcd2004, 12, 2);
+    i2c_lcd1602_write_string(lcd2004, "BI-Ice");
+    i2c_lcd1602_move_cursor(lcd2004, 12, 3);
+    i2c_lcd1602_write_string(lcd2004, "g.betsan");
+}
+
 void display_air() {
     char buf[20];
 

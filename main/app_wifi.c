@@ -9,7 +9,12 @@ static httpd_handle_t server = NULL;
 static int getConnectionInfo() {
     nvs_handle wifi_nvs_handle;
     size_t req_size;
-    nvs_open("wifiConf", NVS_READONLY, &wifi_nvs_handle);
+    printf("Start");
+    nvs_open("wifiConf", NVS_READWRITE, &wifi_nvs_handle);
+    
+    // nvs_set_str(wifi_nvs_handle, "ssid", "ssid");
+    // nvs_set_str(wifi_nvs_handle, "pass", "pass");
+    // nvs_commit(wifi_nvs_handle);
 
     nvs_get_str(wifi_nvs_handle, "ssid", NULL, &req_size);
     wifi_conf_ssid = malloc(req_size);
@@ -19,11 +24,16 @@ static int getConnectionInfo() {
     wifi_conf_pass = malloc(req_size);
     nvs_get_str(wifi_nvs_handle, "pass", wifi_conf_pass, &req_size);
 
-    nvs_close(wifi_nvs_handle);
 
     if(strlen(wifi_conf_ssid) == 0) {
+        printf("Ret");
+        nvs_set_str(wifi_nvs_handle, "ssid", "ssid");
+        nvs_set_str(wifi_nvs_handle, "pass", "pass");
+        nvs_commit(wifi_nvs_handle);
         return -1;
     }
+    printf("Cls");
+    nvs_close(wifi_nvs_handle);
 
 	return 0;
 }

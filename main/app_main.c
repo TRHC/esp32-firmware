@@ -10,6 +10,7 @@
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "driver/touch_pad.h"
+#include "iot_touchpad.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
 #include "lwip/sockets.h"
@@ -45,6 +46,7 @@
 #define I2C_MASTER_SCL_IO        CONFIG_I2C_MASTER_SCL
 
 EventGroupHandle_t s_network_event_group;
+EventGroupHandle_t s_status_event_group;
 i2c_lcd1602_info_t * lcd2004;
 ccs811_sensor_t* ccs811;
 esp_mqtt_client_handle_t mqtt_client;
@@ -54,10 +56,12 @@ float tc, rh;
 uint16_t tvoc, eco2, baseline;
 uint16_t nvs_base = 4000;
 uint8_t  s_retry_num = 0;
+
 bool s_pad_activated;
 bool s_display_meas = true;
-bool s_ccs811_res;
+bool s_ccs881_measured;
 bool s_ccs881_ready;
+bool s_temp_measured;
 
 static void i2c_master_init(void) {
     int i2c_master_port = I2C_MASTER_NUM;
@@ -88,9 +92,9 @@ void i2c_display_init() {
         ESP_LOGI("lcd", "Successful init. on 0x%X", CONFIG_LCD_I2C_ADDRESS);
         i2c_lcd1602_set_backlight(lcd2004, true);
         i2c_lcd1602_move_cursor(lcd2004, 0, 1);
-        i2c_lcd1602_write_string(lcd2004, "TRHC-Firmware ESP32;");
+        i2c_lcd1602_write_string(lcd2004, "Bi-Ice (c) 2019;");
         i2c_lcd1602_move_cursor(lcd2004, 14, 3);
-        i2c_lcd1602_write_string(lcd2004, "v0.0.1");
+        i2c_lcd1602_write_string(lcd2004, "v3.1.1");
         i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_0, temp);
         i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_1, drop);
         i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_2, wifi_off);
@@ -220,19 +224,22 @@ static esp_err_t init_spiffs(void) {
 
 void app_main() {
     ESP_LOGW(TAG, "TRHC-Monitor firmware start");
+    // Initialize I2C Slaves
+    i2c_master_init();
+    i2c_display_init();
+    i2c_ccs811_init();
+
     s_network_event_group = xEventGroupCreate();
+    s_status_event_group  = xEventGroupCreate();
 
     nvs_init();
     init_spiffs();
     tp_init();
-    i2c_master_init();
-
-    // Initialize I2C Slaves
-    i2c_display_init();
-    i2c_ccs811_init();
     
-    xTaskCreate(&display_measure_task, "display_measure_task", 2048, NULL, 5, NULL);
+    xTaskCreate(&display_task, "display_task", 2048, NULL, 5, NULL);
     xTaskCreate(&mqtt_task, "mqtt_task", 2048, NULL, 4, NULL);
+    xTaskCreate(&watch_task, "watch_task", 2048, NULL, 4, NULL);
+    xTaskCreate(&measure_task, "measure_task", 2048, NULL, 4, NULL);
     wifi_init_sta();
     xTaskCreate(&ccs811_ready_task, "ccs811_ready_task", 1512, NULL, 5, NULL);
 }

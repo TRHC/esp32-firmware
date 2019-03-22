@@ -4,4 +4,5 @@
     void display_env();
     void display_air();
     void display_status();
+    void display_error();
 #endif
