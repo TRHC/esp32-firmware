@@ -10,6 +10,7 @@
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "driver/touch_pad.h"
+#include "driver/ledc.h"
 #include "iot_touchpad.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
@@ -41,7 +42,7 @@
 #define I2C_MASTER_NUM           I2C_NUM_0
 #define I2C_MASTER_TX_BUF_LEN    0                     // disabled
 #define I2C_MASTER_RX_BUF_LEN    0                     // disabled
-#define I2C_MASTER_FREQ_HZ       80000
+#define I2C_MASTER_FREQ_HZ       100000
 #define I2C_MASTER_SDA_IO        CONFIG_I2C_MASTER_SDA
 #define I2C_MASTER_SCL_IO        CONFIG_I2C_MASTER_SCL
 
@@ -68,9 +69,9 @@ static void i2c_master_init(void) {
     i2c_config_t conf;
     conf.mode = I2C_MODE_MASTER;
     conf.sda_io_num = I2C_MASTER_SDA_IO;
-    conf.sda_pullup_en = GPIO_PULLUP_DISABLE;  // GY-2561 provides 10kΩ pullups
+    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;  // GY-2561 provides 10kΩ pullups
     conf.scl_io_num = I2C_MASTER_SCL_IO;
-    conf.scl_pullup_en = GPIO_PULLUP_DISABLE;  // GY-2561 provides 10kΩ pullups
+    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;  // GY-2561 provides 10kΩ pullups
     conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
     i2c_param_config(i2c_master_port, &conf);
     i2c_driver_install(i2c_master_port, conf.mode,
@@ -196,6 +197,37 @@ void gpio_init() {
     gpio_set_level(12, 0);
 }
 
+void buzzer_init() {
+    ledc_timer_config_t ledc_timer = {
+        .duty_resolution = LEDC_TIMER_8_BIT, // resolution of PWM duty
+        .freq_hz = 8000,                      // frequency of PWM signal
+        .speed_mode = LEDC_HIGH_SPEED_MODE,           // timer mode
+        .timer_num = LEDC_TIMER_0           // timer index
+    };
+    // Set configuration of timer0 for high speed channels
+    ledc_timer_config(&ledc_timer);
+
+    ledc_channel_config_t ledc_conf = {
+        .channel    = LEDC_CHANNEL_0,
+        .duty       = 50,
+        .gpio_num   = 19,
+        .speed_mode = LEDC_HIGH_SPEED_MODE,
+        .hpoint     = 0,
+        .timer_sel  = LEDC_TIMER_0
+    };
+
+    ledc_channel_config(&ledc_conf);
+
+
+    // Initialize fade service.
+    //ledc_fade_func_install(0);
+
+    //ledc_set_fade_with_time(ledc_conf.speed_mode,
+    //    ledc_conf.channel, 200, 30000);
+    //ledc_fade_start(ledc_conf.speed_mode,
+    //    ledc_conf.channel, LEDC_FADE_NO_WAIT);
+}
+
 static esp_err_t init_spiffs(void) {
     ESP_LOGI("spiffs", "Initializing SPIFFS");
 
@@ -250,5 +282,6 @@ void app_main() {
     xTaskCreate(&mqtt_task, "mqtt_task", 2048, NULL, 4, NULL);
     xTaskCreate(&measure_task, "measure_task", 2048, NULL, 4, NULL);
     xTaskCreate(&ccs811_ready_task, "ccs811_ready_task", 1512, NULL, 5, NULL);
+    buzzer_init();
 }
 
