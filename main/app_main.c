@@ -110,11 +110,17 @@ void i2c_display_init() {
 }
 
 void i2c_ccs811_init() {
+    ccs811 = ccs811_init_sensor(0, CCS811_I2C_ADDRESS_1);
+    if(ccs811) {
+        ESP_LOGI("ccs811", "Successful init. on 0x%X", CCS811_I2C_ADDRESS_1);
+    } else {
+        ESP_LOGE("ccs811", "Unable to init CCS811 on 0x%X", CCS811_I2C_ADDRESS_1);
+    }
     ccs811 = ccs811_init_sensor(0, CCS811_I2C_ADDRESS_2);
     if(ccs811) {
-        ESP_LOGI("ccs811", "Successful init. on 0x%X", CONFIG_CCS811_I2C_ADDRESS);
+        ESP_LOGI("ccs811", "Successful init. on 0x%X", CCS811_I2C_ADDRESS_2);
     } else {
-        ESP_LOGE("ccs811", "Unable to init CCS811");
+        ESP_LOGE("ccs811", "Unable to init CCS811 on 0x%X", CCS811_I2C_ADDRESS_2);
     }
 }
 
@@ -200,7 +206,7 @@ void gpio_init() {
 void buzzer_init() {
     ledc_timer_config_t ledc_timer = {
         .duty_resolution = LEDC_TIMER_8_BIT, // resolution of PWM duty
-        .freq_hz = 8000,                      // frequency of PWM signal
+        .freq_hz = 1000,                      // frequency of PWM signal
         .speed_mode = LEDC_HIGH_SPEED_MODE,           // timer mode
         .timer_num = LEDC_TIMER_0           // timer index
     };
@@ -209,23 +215,20 @@ void buzzer_init() {
 
     ledc_channel_config_t ledc_conf = {
         .channel    = LEDC_CHANNEL_0,
-        .duty       = 50,
-        .gpio_num   = 19,
+        .duty       = 20,
+        .gpio_num   = 21,
         .speed_mode = LEDC_HIGH_SPEED_MODE,
         .hpoint     = 0,
         .timer_sel  = LEDC_TIMER_0
     };
 
     ledc_channel_config(&ledc_conf);
-
-
-    // Initialize fade service.
-    //ledc_fade_func_install(0);
-
-    //ledc_set_fade_with_time(ledc_conf.speed_mode,
-    //    ledc_conf.channel, 200, 30000);
-    //ledc_fade_start(ledc_conf.speed_mode,
-    //    ledc_conf.channel, LEDC_FADE_NO_WAIT);
+    
+    vTaskDelay(130/portTICK_RATE_MS);
+    ledc_set_freq(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 1500);
+    vTaskDelay(350/portTICK_RATE_MS);
+    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 0);
+    ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
 static esp_err_t init_spiffs(void) {
@@ -271,7 +274,7 @@ void app_main() {
     s_network_event_group = xEventGroupCreate();
     s_status_event_group  = xEventGroupCreate();
 
-
+    buzzer_init();
     nvs_init();
     init_spiffs();
     tp_init();
@@ -282,6 +285,5 @@ void app_main() {
     xTaskCreate(&mqtt_task, "mqtt_task", 2048, NULL, 4, NULL);
     xTaskCreate(&measure_task, "measure_task", 2048, NULL, 4, NULL);
     xTaskCreate(&ccs811_ready_task, "ccs811_ready_task", 1512, NULL, 5, NULL);
-    buzzer_init();
 }
 
