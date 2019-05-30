@@ -1,4 +1,4 @@
-#include "app_main.h"
+#include "trhc.h"
 
 void display_status() {
     i2c_lcd1602_move_cursor(lcd2004, 17, 0);
@@ -26,11 +26,6 @@ void display_status() {
 
 void display_env() {
     char buf[20];
-    sprintf(buf, "RelH: %.2f%%", rh);
-    i2c_lcd1602_move_cursor(lcd2004, 0, 0);
-    i2c_lcd1602_write_string(lcd2004, buf);
-    i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_1);
-
     sprintf(buf, "Temp: %.2fC", tc);
     i2c_lcd1602_move_cursor(lcd2004, 0, 1);
     i2c_lcd1602_write_string(lcd2004, buf);
@@ -45,22 +40,6 @@ void display_error() {
     i2c_lcd1602_write_string(lcd2004, "BI-Ice");
     i2c_lcd1602_move_cursor(lcd2004, 12, 3);
     i2c_lcd1602_write_string(lcd2004, "g.betsan");
-}
-
-void display_air() {
-    char buf[20];
-
-    sprintf(buf, "TVOC: %uppb", tvoc);
-    i2c_lcd1602_move_cursor(lcd2004, 0, 2);
-    i2c_lcd1602_write_string(lcd2004, "        ");
-    i2c_lcd1602_move_cursor(lcd2004, 0, 2);
-    i2c_lcd1602_write_string(lcd2004, buf);
-
-    sprintf(buf, "eCO2: %uppm", eco2);
-    i2c_lcd1602_move_cursor(lcd2004, 0, 3);
-    i2c_lcd1602_write_string(lcd2004, "        ");
-    i2c_lcd1602_move_cursor(lcd2004, 0, 3);
-    i2c_lcd1602_write_string(lcd2004, buf);
 }
 
 void display_info() {
@@ -82,11 +61,4 @@ void display_info() {
     sprintf(buf, "Rev: %d", chip.revision);
     i2c_lcd1602_move_cursor(lcd2004, 0, 1);
     i2c_lcd1602_write_string(lcd2004, buf);
-    //i2c_lcd1602_write_string(lcd2004, "Lo: T H q");
-
-    sprintf(buf, "Base: %d", baseline);
-    i2c_lcd1602_move_cursor(lcd2004, 0, 3);
-    i2c_lcd1602_write_string(lcd2004, "          ");
-    i2c_lcd1602_move_cursor(lcd2004, 0, 3);
-    i2c_lcd1602_write_string(lcd2004, buf); 
 }

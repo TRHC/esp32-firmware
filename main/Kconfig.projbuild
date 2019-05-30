@@ -1,5 +1,5 @@
 menu "TRHC Firmware configuration"
-menu "I2C Slaves"
+menu "Peripheral devices"
 config I2C_MASTER_SCL
     int "I2C Master SCL GPIO number"
 	range 0 34
@@ -32,6 +32,9 @@ config LCD_I2C_ADDRESS
     default 0x27
     help
         I2C address for HD44780-compatible LCD1602 device.
+config OWB_PIN
+    int "1-wire bus GPIO pin"
+    default 12
 endmenu
 menu "Slave configuration"
 config CCS811_READY_MIN

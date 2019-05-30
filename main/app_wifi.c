@@ -1,5 +1,4 @@
-#include "app_main.h"
-#include "app_mqtt.h"
+#include "trhc.h"
 #include <esp_http_server.h>
 
 char* wifi_conf_ssid;
