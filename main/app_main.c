@@ -50,7 +50,7 @@ float tc;
 uint8_t s_retry_num ;
 
 bool s_pad_activated;
-bool s_display_meas = true;
+bool s_display_meas = false;
 bool s_ccs881_measured;
 bool s_ccs881_ready;
 bool s_temp_measured;
@@ -214,23 +214,23 @@ static esp_err_t init_spiffs(void) {
 
 void app_main() {
     ESP_LOGW(TAG, "TRHC-Monitor firmware start");
+
     // Initialize I2C Slaves
-    init_ds18b20();
-    get_temp();
     i2c_master_init();
     i2c_display_init();
 
     s_network_event_group = xEventGroupCreate();
     s_status_event_group  = xEventGroupCreate();
+    xEventGroupSetBits(s_status_event_group, BIT1);
 
-    //buzzer_init();
+    // buzzer_init();
     nvs_init();
     init_spiffs();
     tp_init();
     gpio_init();
     wifi_init_sta();
+    init_ds18b20();
     
-
     xTaskCreate(&display_task, "display_task", 2048, NULL, 5, NULL);
     xTaskCreate(&mqtt_task, "mqtt_task", 2048, NULL, 4, NULL);
     xTaskCreate(&measure_task, "measure_task", 2048, NULL, 4, NULL);

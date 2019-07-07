@@ -18,15 +18,14 @@ void mqtt_task(void * pvParameter) {
 }
 
 void measure_task(void * pvParameter) {
-    float thrc;
     vTaskDelay(3000 / portTICK_PERIOD_MS);
     while(true) {
+        get_temp();
         if(tc == -999.0) {
             s_temp_measured = false;
         } else {
             s_temp_measured = true;
         }
-
         xEventGroupSetBits(s_status_event_group, BIT0);
         vTaskDelay(3000 / portTICK_PERIOD_MS);
     }
@@ -35,8 +34,7 @@ void measure_task(void * pvParameter) {
 void display_task(void * pvParameter) {
     char buf[20], buf1[20];
     EventBits_t uxBits;
-
-
+    
     while(true) {
         uxBits = xEventGroupWaitBits(s_status_event_group, BIT0, false, true, portTICK_PERIOD_MS );
         if (uxBits & BIT0) {

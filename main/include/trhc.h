@@ -62,8 +62,8 @@
     void mqtt_task(void *);
 
 // Chars
-    uint8_t mqtt_on[8], mqtt_off[8], wifi_on[8], 
-            wifi_off[8], drop[8], temp[8], tp_on[8], tp_off[8];
+    uint8_t mqtt_on[8], mqtt_off[8], wifi_on[8], wifi_off[8], drop[8], 
+            temp[8], tp_on[8], tp_off[8], bigNums[10][6];
 
 // WiFi
     esp_err_t wifi_event_handler(void *, system_event_t *);
@@ -78,7 +78,7 @@
 // DS18B20
     esp_err_t init_ds18b20();
     float get_temp();
-    DS18B20_Info * ds18b20_info;
+    static DS18B20_Info ds18b20_info;
 
 
 #endif
