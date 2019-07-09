@@ -1,32 +1,69 @@
 #include "trhc.h"
 
-void int_to_bin_digit(uint32_t in, uint8_t* out)
-{
-    uint8_t count = 8;
-    unsigned int mask = 1U << (count-1);
-    int i;
-    for (i = 0; i < count; i++) {
-        out[i] = (in & mask) ? 1 : 0;
-        in <<= 1;
+void define_status() {
+    i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_2, wifi_off);
+    i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_3, wifi_on);
+    i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_4, mqtt_off);
+    i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_5, mqtt_on);
+}
+
+void define_bigNums() {
+    uint8_t i;
+    for(i = 0; i < 8; i++) {
+        i2c_lcd1602_define_char(lcd2004, i, bars[i]);
     }
 }
 
-void write_custom(uint32_t ch) {
-    uint8_t custom[8];
-    int_to_bin_digit(ch, &custom);
-    //ESP_LOGW("dbg", "%d", custom[0]);
-    i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_0, custom);
-    i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_0);
+void write_custom(const uint8_t ch, int col, int row) {
+    i2c_lcd1602_move_cursor(lcd2004, col, row);
+    if(ch == 8) {
+        i2c_lcd1602_write_string(lcd2004, " "); 
+    } else {
+        i2c_lcd1602_write_char(lcd2004, ch); 
+    }
+}
+
+void print_bignum(uint8_t num, int col, int row) {
+    uint8_t i, ii, ccol, crow;
+    
+    if(num == 11) { // it is dot (.)
+        i2c_lcd1602_move_cursor(lcd2004, col, 2);
+        i2c_lcd1602_write_char(lcd2004, 7); 
+        return;
+    }
+
+    for(i = 0; i < 9; i++) {
+        ccol = i % 3;
+        crow = i / 3;
+        write_custom(nums[num][i], col + ccol, row + crow);
+    }
+}
+
+void print_bigFloat(float num) {
+    char buf[6];
+    uint8_t i, col;
+    col = 0;
+
+    sprintf(buf, "%.2f", num);
+    ESP_LOGI("dgb", "%s", buf);
+    for(i = 0; i <= 5; i++) {
+        char ch = buf[i];
+        if(ch == '-') {
+            print_bignum(10, col, 0);
+            col += 4;
+        } else if(ch == '.') {
+            print_bignum(11, col, 0);
+            col += 2;
+        } else if(ch <= 57 && ch >= 48) {
+            print_bignum(ch - '0', col, 0);
+            col += 4;
+        }
+    }
 }
 
 void display_status() {
+    define_status();
     i2c_lcd1602_move_cursor(lcd2004, 17, 0);
-
-    if(s_display_meas) {  
-       i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_7); 
-    } else {
-       i2c_lcd1602_write_char(lcd2004, I2C_LCD1602_CHARACTER_CUSTOM_6);
-    }
 
     // MQTT
     if(xEventGroupGetBits(s_network_event_group) & BIT1) {
@@ -44,12 +81,8 @@ void display_status() {
 }
 
 void display_env() {
-    char buf[20];
-    sprintf(buf, "%.1f", tc);
-    i2c_lcd1602_move_cursor(lcd2004, 0, 1);
-    write_custom(bigNums[0][0]);
-    i2c_lcd1602_write_string(lcd2004, "Test:");
-    //i2c_lcd1602_write_char(lcd2004, (char)bigNums[0][0]);
+    define_bigNums();
+    print_bigFloat(tc);
 }
 
 void display_error() {

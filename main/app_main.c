@@ -87,14 +87,6 @@ void i2c_display_init() {
         i2c_lcd1602_write_string(lcd2004, "Bi-Ice (c) 2019;");
         i2c_lcd1602_move_cursor(lcd2004, 14, 3);
         i2c_lcd1602_write_string(lcd2004, "v3.1.1");
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_0, temp);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_1, drop);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_2, wifi_off);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_3, wifi_on);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_4, mqtt_off);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_5, mqtt_on);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_6, tp_on);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_7, tp_off);
     } else {
         ESP_LOGE("lcd", "Unable to init LCD");
     }

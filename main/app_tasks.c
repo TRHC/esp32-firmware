@@ -47,12 +47,13 @@ void display_task(void * pvParameter) {
                 i2c_lcd1602_clear(lcd2004);
             }
 
-            display_status();
             if(s_display_meas && s_temp_measured) {
                 display_env();
             } else if(s_display_meas) {
                 display_error();
+                display_status();
             } else {
+                display_status();
                 display_info();
             }
 

@@ -63,7 +63,9 @@
 
 // Chars
     uint8_t mqtt_on[8], mqtt_off[8], wifi_on[8], wifi_off[8], drop[8], 
-            temp[8], tp_on[8], tp_off[8], bigNums[10][6];
+            temp[8], tp_on[8], tp_off[8], bars[8][8];
+    
+    int nums[10][9];
 
 // WiFi
     esp_err_t wifi_event_handler(void *, system_event_t *);

@@ -20,7 +20,7 @@ esp_err_t init_ds18b20() {
 
         ds18b20_init_solo(&ds18b20_info, owb);
         ds18b20_use_crc(&ds18b20_info, true);
-        ds18b20_set_resolution(&ds18b20_info, DS18B20_RESOLUTION_9_BIT);
+        ds18b20_set_resolution(&ds18b20_info, DS18B20_RESOLUTION_12_BIT);
         ds18b20_convert_and_read_temp(&ds18b20_info, &tc);
         vTaskDelay(2000 / portTICK_PERIOD_MS);
 
@@ -35,6 +35,6 @@ esp_err_t init_ds18b20() {
 
 float get_temp() {
     ds18b20_convert_and_read_temp(&ds18b20_info, &tc);
-    ESP_LOGW("dbg", "Just tried conversion"); 
+    // ESP_LOGW("dbg", "Just tried conversion"); 
     return tc;
 }
