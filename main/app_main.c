@@ -27,14 +27,8 @@
 
 #include "smbus.h"
 #include "i2c-lcd1602.h"
-#include "si7021.h"
-#include "ccs811.h"
 
-#include "chars.h"
-#include "app_mqtt.h"
-#include "app_wifi.h"
-#include "app_display.h"
-#include "app_tasks.h"
+#include "trhc.h"
 
 #define TAG "app"
 
@@ -49,17 +43,14 @@
 EventGroupHandle_t s_network_event_group;
 EventGroupHandle_t s_status_event_group;
 i2c_lcd1602_info_t * lcd2004;
-ccs811_sensor_t* ccs811;
 esp_mqtt_client_handle_t mqtt_client;
 nvs_handle my_handle;
 
-float tc, rh;
-uint16_t tvoc, eco2, baseline;
-uint16_t nvs_base = 4000;
-uint8_t  s_retry_num = 0;
+float tc;
+uint8_t s_retry_num ;
 
 bool s_pad_activated;
-bool s_display_meas = true;
+bool s_display_meas = false;
 bool s_ccs881_measured;
 bool s_ccs881_ready;
 bool s_temp_measured;
@@ -96,31 +87,8 @@ void i2c_display_init() {
         i2c_lcd1602_write_string(lcd2004, "Bi-Ice (c) 2019;");
         i2c_lcd1602_move_cursor(lcd2004, 14, 3);
         i2c_lcd1602_write_string(lcd2004, "v3.1.1");
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_0, temp);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_1, drop);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_2, wifi_off);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_3, wifi_on);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_4, mqtt_off);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_5, mqtt_on);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_6, tp_on);
-        i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_7, tp_off);
     } else {
         ESP_LOGE("lcd", "Unable to init LCD");
-    }
-}
-
-void i2c_ccs811_init() {
-    ccs811 = ccs811_init_sensor(0, CCS811_I2C_ADDRESS_1);
-    if(ccs811) {
-        ESP_LOGI("ccs811", "Successful init. on 0x%X", CCS811_I2C_ADDRESS_1);
-    } else {
-        ESP_LOGE("ccs811", "Unable to init CCS811 on 0x%X", CCS811_I2C_ADDRESS_1);
-    }
-    ccs811 = ccs811_init_sensor(0, CCS811_I2C_ADDRESS_2);
-    if(ccs811) {
-        ESP_LOGI("ccs811", "Successful init. on 0x%X", CCS811_I2C_ADDRESS_2);
-    } else {
-        ESP_LOGE("ccs811", "Unable to init CCS811 on 0x%X", CCS811_I2C_ADDRESS_2);
     }
 }
 
@@ -137,34 +105,6 @@ void nvs_init() {
         ESP_LOGE("nvs", "Error (%s) opening NVS handle!", esp_err_to_name(err));
     } else {
         ESP_LOGI("nvs", "Successful open of NVS");
-
-        err = nvs_get_u16(my_handle, "nvs_base", &nvs_base);
-        switch (err) {
-            case ESP_OK:
-                ESP_LOGI("nvs", "Successful reading of stored BASELINE param: %d", nvs_base);
-                break;
-            case ESP_ERR_NVS_NOT_FOUND:
-                ESP_LOGW("nvs", "BASELINE param was not found in memory, writing default: %d", nvs_base);
-                err = nvs_set_u16(my_handle, "nvs_base", nvs_base);
-                if(err != ESP_OK) {
-                    ESP_LOGE("nvs", "Error writing default BASELINE to memory");
-                } else {
-                    ESP_LOGI("nvs", "Successful writing of default BASELINE to memory");
-                }
-                
-                break;
-            default :
-                ESP_LOGE("nvs", "Error (%s) reading!", esp_err_to_name(err));
-        }
-
-        // Write default or retrieved BASELINE
-        err = nvs_commit(my_handle);
-        if(err != ESP_OK) {
-            ESP_LOGE("nvs", "Error commiting NVS changes");
-        } else {
-            ESP_LOGI("nvs", "Successful commiting NVS changes");
-        }
-        // Close
         nvs_close(my_handle);
     }
 }
@@ -266,24 +206,25 @@ static esp_err_t init_spiffs(void) {
 
 void app_main() {
     ESP_LOGW(TAG, "TRHC-Monitor firmware start");
+
     // Initialize I2C Slaves
     i2c_master_init();
     i2c_display_init();
-    i2c_ccs811_init();
 
     s_network_event_group = xEventGroupCreate();
     s_status_event_group  = xEventGroupCreate();
+    xEventGroupSetBits(s_status_event_group, BIT1);
 
-    buzzer_init();
+    // buzzer_init();
     nvs_init();
     init_spiffs();
     tp_init();
     gpio_init();
     wifi_init_sta();
-
+    init_ds18b20();
+    
     xTaskCreate(&display_task, "display_task", 2048, NULL, 5, NULL);
     xTaskCreate(&mqtt_task, "mqtt_task", 2048, NULL, 4, NULL);
     xTaskCreate(&measure_task, "measure_task", 2048, NULL, 4, NULL);
-    xTaskCreate(&ccs811_ready_task, "ccs811_ready_task", 1512, NULL, 5, NULL);
 }
 

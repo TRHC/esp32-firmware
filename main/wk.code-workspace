@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"path": "/home/grig191/projects/esp32-firmware"
+		},
+		{
+			"name": "STM32_mbed",
+			"path": "/home/grig191/projects/STM32_mbed"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"sdkconfig.h": "c",
+			"app_main.h": "c",
+			"app_mqtt.h": "c",
+			"ds18b20.h": "c"
+		},
+		"terminal.integrated.env.linux": {
+			"PATH": "/home/grig191/.platformio/penv/bin:/home/grig191/.platformio/penv:/home/grig191/esp/xtensa-esp32-elf/bin:/home/grig191/.yarn/bin/:/home/grig191/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+			"PLATFORMIO_CALLER": "vscode"
+		}
+	}
+}
