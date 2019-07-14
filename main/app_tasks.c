@@ -1,16 +1,18 @@
 #include "trhc.h"
 
 void mqtt_task(void * pvParameter) {
-    char buf[100];
     EventBits_t uxBits;
     ESP_LOGI("mqtt", "Task registered");
     vTaskDelay(7000 / portTICK_PERIOD_MS);
     while(true) {
         uxBits = xEventGroupWaitBits(s_network_event_group, BIT0 | BIT1, false, true, portTICK_PERIOD_MS );
         if(uxBits & BIT1) {
-            sprintf(buf, "%.2f", tc);
             if (s_temp_measured) {
-                esp_mqtt_client_publish(mqtt_client, "esp32_iot/env_data", buf, 0, 2, 0);
+                char url[50];
+                char buf[50];
+                sprintf(url, "esp32_iot/%s", rom_code_s);
+                sprintf(buf, "%.2f", tc);
+                esp_mqtt_client_publish(mqtt_client, url, buf, 0, 2, 0);
             }
         }
         vTaskDelay(5000 / portTICK_PERIOD_MS);

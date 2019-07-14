@@ -45,7 +45,7 @@ void print_bigFloat(float num) {
     col = 0;
 
     sprintf(buf, "%.2f", num);
-    ESP_LOGI("dgb", "%s", buf);
+    // ESP_LOGI("dbg", "DS18B20: %s", buf);
     for(i = 0; i <= 5; i++) {
         char ch = buf[i];
         if(ch == '-') {

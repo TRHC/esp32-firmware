@@ -80,7 +80,8 @@
 // DS18B20
     esp_err_t init_ds18b20();
     float get_temp();
-    static DS18B20_Info ds18b20_info;
+    DS18B20_Info ds18b20_info;
+    char rom_code_s[OWB_ROM_CODE_STRING_LENGTH];
 
 
 #endif

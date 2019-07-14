@@ -215,7 +215,7 @@ void app_main() {
     s_status_event_group  = xEventGroupCreate();
     xEventGroupSetBits(s_status_event_group, BIT1);
 
-    // buzzer_init();
+    buzzer_init();
     nvs_init();
     init_spiffs();
     tp_init();

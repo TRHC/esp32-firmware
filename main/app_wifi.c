@@ -1,5 +1,7 @@
 #include "trhc.h"
 #include <esp_http_server.h>
+#include <esp_https_ota.h>
+#include "esp_ota_ops.h"
 
 char* wifi_conf_ssid;
 char* wifi_conf_pass;
@@ -108,6 +110,62 @@ httpd_uri_t conf_form = {
     .user_ctx = NULL
 };
 
+
+esp_err_t do_firmware_upgrade(char* domain) {
+    //esp_http_client_config_t config = {
+    //    .url = "http://trhc.shpag.ga/ota.bin",
+    //};
+    esp_http_client_config_t config = {
+        .host = domain,
+        .path = "/ota.bin",
+        .transport_type = HTTP_TRANSPORT_OVER_TCP,
+    };
+    //sprintf(buf, "http://trhc.shpag.ga/ota.bin");
+    //config.url = "http://trhc.shpag.ga/ota.bin";
+
+    ESP_LOGI("ota", "Performing OTA Update from %s", config.host);
+
+    esp_err_t ret = esp_https_ota(&config);
+    if (ret == ESP_OK) {
+        // esp_restart();
+        return ESP_OK;
+    } else {
+        return ESP_FAIL;
+    }
+}
+
+static esp_err_t http_ota_form(httpd_req_t *req) {
+    char*  buf;
+    size_t buf_len;
+
+    buf_len = httpd_req_get_url_query_len(req) + 1;
+    if (buf_len > 1) {
+        buf = malloc(buf_len);
+        if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
+            char domain[64];
+            /* Get value of expected key from query string */
+            if (httpd_query_key_value(buf, "domain", domain, sizeof(domain)) == ESP_OK) {
+                if(do_firmware_upgrade(&domain) == ESP_OK) {
+                    httpd_resp_sendstr_chunk(req, "OK, REBOOT NOW");
+                    httpd_resp_sendstr_chunk(req, NULL);
+                    free(buf);
+                    return ESP_OK;
+                }
+            }
+        }
+    }
+    httpd_resp_sendstr_chunk(req, "FAIL");
+    httpd_resp_sendstr_chunk(req, NULL);
+    return ESP_FAIL;
+}
+
+httpd_uri_t ota_form = {
+    .uri      = "/ota",
+    .method   = HTTP_GET,
+    .handler  = http_ota_form,
+    .user_ctx = NULL
+};
+
 httpd_handle_t start_webserver(void) {
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -115,6 +173,7 @@ httpd_handle_t start_webserver(void) {
     if (httpd_start(&server, &config) == ESP_OK) {
         httpd_register_uri_handler(server, &index_html);
         httpd_register_uri_handler(server, &conf_form);
+        httpd_register_uri_handler(server, &ota_form);
         return server;
     }
 

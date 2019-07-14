@@ -3,7 +3,7 @@ menu "Peripheral devices"
 config I2C_MASTER_SCL
     int "I2C Master SCL GPIO number"
 	range 0 34
-	default 19
+	default 5
 	help
 		GPIO number (IOxx) for I2C SCL.
 
