@@ -74,7 +74,7 @@ void i2c_display_init() {
     // Set up the SMBus
     smbus_info_t * smbus_info = smbus_malloc();
     smbus_init(smbus_info, I2C_MASTER_NUM, CONFIG_LCD_I2C_ADDRESS);
-    smbus_set_timeout(smbus_info, 1000 / portTICK_RATE_MS);
+    smbus_set_timeout(smbus_info, 1000 / portTICK_PERIOD_MS);
 
     // Set up the LCD device with backlight off and turn it on
     lcd2004 = i2c_lcd1602_malloc();
@@ -133,9 +133,9 @@ static void tp_init() {
 
 void gpio_init() {
     gpio_config_t io_conf;
-    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
     io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pin_bit_mask = GPIO_SEL_12;
+    io_conf.pin_bit_mask = GPIO_NUM_12;
     io_conf.pull_down_en = 0;
     io_conf.pull_up_en = 0;
 
@@ -164,9 +164,9 @@ void buzzer_init() {
 
     ledc_channel_config(&ledc_conf);
     
-    vTaskDelay(130/portTICK_RATE_MS);
+    vTaskDelay(130/portTICK_PERIOD_MS);
     ledc_set_freq(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 1500);
-    vTaskDelay(350/portTICK_RATE_MS);
+    vTaskDelay(350/portTICK_PERIOD_MS);
     ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 0);
     ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0);
 }
@@ -221,7 +221,7 @@ void app_main() {
     tp_init();
     gpio_init();
     wifi_init_sta();
-    init_ds18b20();
+    // init_ds18b20();
     
     xTaskCreate(&display_task, "display_task", 2048, NULL, 5, NULL);
     xTaskCreate(&mqtt_task, "mqtt_task", 2048, NULL, 4, NULL);

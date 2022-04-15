@@ -10,13 +10,17 @@ void mqtt_task(void * pvParameter) {
             if (s_temp_measured) {
                 char url[50];
                 char buf[50];
-                sprintf(url, "esp32_iot/%s", rom_code_s);
+                sprintf(url, "esp32_iot/%s", "12345");
                 sprintf(buf, "%.2f", tc);
                 esp_mqtt_client_publish(mqtt_client, url, buf, 0, 2, 0);
             }
         }
         vTaskDelay(5000 / portTICK_PERIOD_MS);
     }
+}
+
+float get_temp() {
+    return 0.0;
 }
 
 void measure_task(void * pvParameter) {

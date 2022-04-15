@@ -1,4 +1,5 @@
 #include "trhc.h"
+#include "esp_system.h"
 
 void define_status() {
     i2c_lcd1602_define_char(lcd2004, I2C_LCD1602_INDEX_CUSTOM_2, wifi_off);

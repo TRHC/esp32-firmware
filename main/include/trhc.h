@@ -7,7 +7,7 @@
 #include "esp_system.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
-#include "esp_event_loop.h"
+#include "esp_event.h"
 #include "esp_spiffs.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
@@ -27,9 +27,9 @@
 
 #include "smbus.h"
 #include "i2c-lcd1602.h"
-#include "owb.h"
-#include "owb_rmt.h"
-#include "ds18b20.h"
+// #include "owb.h"
+// #include "owb_rmt.h"
+// #include "ds18b20.h"
 
 
 // Event groups
@@ -68,7 +68,9 @@
     int nums[10][9];
 
 // WiFi
-    esp_err_t wifi_event_handler(void *, system_event_t *);
+    // esp_err_t wifi_event_handler(void *, system_event_t *);
+    static EventGroupHandle_t s_wifi_event_group;
+    void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
     void wifi_init_sta();
 
 // Tasks
@@ -78,10 +80,10 @@
     void mqtt_task(void *);
 
 // DS18B20
-    esp_err_t init_ds18b20();
+    // esp_err_t init_ds18b20();
     float get_temp();
-    DS18B20_Info ds18b20_info;
-    char rom_code_s[OWB_ROM_CODE_STRING_LENGTH];
+    // DS18B20_Info ds18b20_info;
+    // char rom_code_s[OWB_ROM_CODE_STRING_LENGTH];
 
 
 #endif
